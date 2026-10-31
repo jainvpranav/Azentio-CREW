@@ -8,8 +8,10 @@ Produces data_gen/output/*.pdf|csv|json|xlsx plus ground_truth.json
 (txn key "<filename>#<row_index>" -> expected category).
 """
 import csv
+import io
 import json
 import os
+import random
 from decimal import Decimal as D
 
 import pandas as pd
@@ -17,13 +19,55 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from PIL import Image, ImageDraw
 
 from data_gen import scenarios as sc
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 STYLES = getSampleStyleSheet()
+
+
+def _make_scanned_raster(variant: str = "page") -> Image.Image:
+    """Generate a raster image that looks like a scanned/photocopied bank statement.
+
+    The goal is to preserve the no-text-layer behavior of a real scanned page while
+    ensuring the PDF contains an embedded image object rather than just vector lines.
+    """
+    width, height = 1600, 2200
+    img = Image.new("RGB", (width, height), color=(244, 244, 244))
+    draw = ImageDraw.Draw(img)
+
+    # large tinted content area to mimic a scanned document with low-contrast markings
+    draw.rectangle((80, 250, 1520, 1900), fill=(233, 233, 236))
+
+    if variant == "page":
+        for y in range(360, 1750, 32):
+            draw.line((110, y, 1490, y), fill=(180, 180, 180), width=2)
+    else:
+        draw.rectangle((180, 260, 700, 620), fill=(91, 111, 148))
+        draw.rectangle((220, 700, 1380, 1700), fill=(246, 248, 251))
+        for y in range(800, 1600, 42):
+            draw.line((250, y, 1330, y), fill=(142, 160, 186), width=2)
+
+    # Light noise to mimic scan artifacts without producing actual text.
+    for _ in range(175):
+        x0 = random.randint(50, 1550)
+        y0 = random.randint(50, 2100)
+        x1 = x0 + random.randint(5, 50)
+        y1 = y0 + random.randint(2, 35)
+        draw.rectangle((x0, y0, x1, y1), fill=(220, 220, 220))
+
+    return img
+
+
+def _embed_raster_pdf(canvas_obj, raster_img: Image.Image):
+    buffer = io.BytesIO()
+    raster_img.save(buffer, format="PNG")
+    buffer.seek(0)
+    canvas_obj.drawImage(ImageReader(buffer), 0, 0, width=A4[0], height=A4[1])
 
 
 # ===================== balance computation =====================
@@ -152,13 +196,9 @@ def write_layout_b_pdf(path: str, holder: str, account_number: str, bank_name: s
 # ===================== scanned (image-only) page =====================
 
 def write_scanned_page_pdf(path: str):
-    """One page with only vector graphics, no text objects at all."""
+    """One page with only an embedded raster image, no text objects at all."""
     c = canvas.Canvas(path, pagesize=A4)
-    c.setFillColorRGB(0.92, 0.92, 0.92)
-    c.rect(40, 400, 500, 350, fill=1, stroke=0)
-    c.setStrokeColorRGB(0.6, 0.6, 0.6)
-    for y in range(420, 720, 25):
-        c.line(60, y, 500, y)
+    _embed_raster_pdf(c, _make_scanned_raster("page"))
     c.showPage()
     c.save()
 
@@ -166,13 +206,11 @@ def write_scanned_page_pdf(path: str):
 def write_scanned_image_pdf(path: str, accent: str = "#5b6f94"):
     """Second image-only PDF variant to exercise a second scanned page file."""
     c = canvas.Canvas(path, pagesize=A4)
-    c.setFillColor(colors.HexColor(accent))
-    c.rect(70, 160, 180, 90, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#f6f8fb"))
-    c.rect(120, 280, 360, 240, fill=1, stroke=0)
-    c.setStrokeColor(colors.HexColor("#8ea0ba"))
-    for y in range(300, 500, 22):
-        c.line(150, y, 430, y)
+    img = _make_scanned_raster("image")
+    # Touch the background with a slight colour tint to mimic a scanned document.
+    tint = Image.new("RGB", img.size, color=(240, 242, 247))
+    tint.paste(img, (0, 0))
+    _embed_raster_pdf(c, tint)
     c.showPage()
     c.save()
 

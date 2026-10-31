@@ -1,9 +1,32 @@
 """Data quality and review flags"""
 import json
 from decimal import Decimal
+from collections import Counter
 from sqlmodel import Session, select
 
 from app.models import Transaction, Statement, Flag, FlagSeverity, Classification, TransactionCategory, Account
+
+# ISO code → display symbol (used only in human-readable flag messages)
+_CURRENCY_SYMBOLS_MAP = {
+    'INR': '₹', 'USD': '$', 'EUR': '€', 'GBP': '£',
+    'JPY': '¥', 'CNY': '¥', 'AUD': 'A$', 'CAD': 'C$',
+    'SGD': 'S$', 'HKD': 'HK$', 'AED': 'AED ',
+}
+
+
+def _fmt_amount(amount, currency: str = None) -> str:
+    """Format an amount with its currency symbol for flag messages."""
+    symbol = _CURRENCY_SYMBOLS_MAP.get(currency or '', '') or (f'{currency} ' if currency else '')
+    return f"{symbol}{amount:,.2f}" if isinstance(amount, (int, float, Decimal)) else f"{symbol}{amount}"
+
+
+def _account_currency(session: Session, account_id: int) -> str:
+    """Return the most common declared currency for an account's statements, or None."""
+    stmts = session.exec(select(Statement).where(Statement.account_id == account_id)).all()
+    currencies = [s.currency for s in stmts if s.currency]
+    if not currencies:
+        return None
+    return Counter(currencies).most_common(1)[0][0]
 
 
 def create_flag(
@@ -43,7 +66,7 @@ def check_reconciliation_mismatches(session: Session) -> dict:
                 session,
                 "RECON_MISMATCH",
                 FlagSeverity.HIGH,
-                f"Statement mismatch: ₹{statement.discrepancy}. Opening + txns ≠ closing.",
+                f"Statement mismatch: {_fmt_amount(statement.discrepancy, statement.currency)}. Opening + txns ≠ closing.",
                 statement_id=statement.id,
                 account_id=statement.account_id,
                 evidence=[statement.id]
@@ -99,7 +122,7 @@ def check_large_cash_deposits(session: Session) -> dict:
                     session,
                     "LARGE_CASH_DEPOSIT",
                     FlagSeverity.WARN,
-                    f"Large cash deposit: ₹{txn.credit}. Requires review.",
+                    f"Large cash deposit: {_fmt_amount(txn.credit, txn.currency)}. Requires review.",
                     txn_id=txn.id,
                     account_id=account.id,
                     evidence=[txn.id]
@@ -135,7 +158,7 @@ def check_round_figures(session: Session) -> dict:
                     session,
                     "ROUND_FIGURE_SPIKE",
                     FlagSeverity.WARN,
-                    f"Round figure credit: ₹{txn.credit}. May need review.",
+                    f"Round figure credit: {_fmt_amount(txn.credit, txn.currency)}. May need review.",
                     txn_id=txn.id,
                     account_id=account.id,
                     evidence=[txn.id]
@@ -208,13 +231,14 @@ def check_low_balance(session: Session) -> dict:
     count = 0
     for account in accounts:
         trend = compute_balance_trend(session, account.id)
+        acct_currency = _account_currency(session, account.id)
         for month, days in trend["days_below_threshold"].items():
             if days >= 5:
                 create_flag(
                     session,
                     "LOW_BALANCE",
                     FlagSeverity.WARN,
-                    f"{days} days below ₹{trend['threshold']:.0f} balance in {month}.",
+                    f"{days} days below {_fmt_amount(trend['threshold'], acct_currency)} balance in {month}.",
                     account_id=account.id,
                 )
                 count += 1
@@ -237,11 +261,12 @@ def check_income_decline(session: Session) -> dict:
         prior_3 = sum(detail["by_month"][m] for m in months[-6:-3])
         last_3 = sum(detail["by_month"][m] for m in months[-3:])
         if prior_3 > 0 and last_3 < 0.7 * prior_3:
+            acct_currency = _account_currency(session, account.id)
             create_flag(
                 session,
                 "INCOME_DECLINE",
                 FlagSeverity.WARN,
-                f"Last 3 months' income (₹{last_3:.0f}) is below 70% of the prior 3 months' (₹{prior_3:.0f}).",
+                f"Last 3 months' income ({_fmt_amount(last_3, acct_currency)}) is below 70% of the prior 3 months' ({_fmt_amount(prior_3, acct_currency)}).",
                 account_id=account.id,
             )
             count += 1
@@ -481,6 +506,7 @@ def get_flag_queue(session: Session) -> dict:
                     "txn_date": txn.txn_date.isoformat(),
                     "description": txn.description,
                     "amount": float(txn.credit or txn.debit or 0),
+                    "currency": txn.currency,
                 }
         elif flag.statement_id:
             stmt = session.get(Statement, flag.statement_id)
@@ -488,7 +514,10 @@ def get_flag_queue(session: Session) -> dict:
                 context = {
                     "period_start": stmt.period_start.isoformat(),
                     "period_end": stmt.period_end.isoformat(),
+                    "currency": stmt.currency,
                 }
+        if not context.get("currency") and flag.account_id:
+            context["currency"] = _account_currency(session, flag.account_id)
 
         severity_key = flag.severity.value.lower()
         by_severity[severity_key].append({

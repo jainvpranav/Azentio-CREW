@@ -134,6 +134,8 @@ def list_transactions(
             counterparty_account=txn.counterparty_account,
             reference_number=txn.reference_number,
             transaction_type=txn.transaction_type,
+            currency=txn.currency,
+            custom_metadata=txn.custom_metadata,
         ))
 
     # Filter by category if specified
@@ -175,6 +177,8 @@ def get_transaction(txn_id: int, session: Session = Depends(get_session)):
         counterparty_account=txn.counterparty_account,
         reference_number=txn.reference_number,
         transaction_type=txn.transaction_type,
+        currency=txn.currency,
+        custom_metadata=txn.custom_metadata,
     )
 
 

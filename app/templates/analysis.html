@@ -162,46 +162,67 @@
           style="
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
-            gap: 14px;
-            height: 160px;
+            gap: 12px;
             margin-top: 16px;
-            padding: 0 5px;
-            overflow-x: auto;
+            padding: 0 5px 4px;
+            min-height: 160px;
           "
         >
           <template x-for="month in chartMonths" :key="month">
             <div
               style="
-                min-width: 40px;
-                flex: 1;
-                display: flex;
-                flex-direction: column;
+                display: grid;
+                grid-template-columns: 72px minmax(0, 1fr) 78px;
                 align-items: center;
-                gap: 4px;
+                gap: 12px;
+                min-height: 30px;
               "
             >
+              <small
+                style="
+                  font-size: 10px;
+                  color: var(--gray-500);
+                  text-align: left;
+                "
+                x-text="month"
+              ></small>
+
               <div
                 style="
                   display: flex;
-                  align-items: flex-end;
-                  gap: 3px;
-                  height: 120px;
+                  align-items: center;
+                  width: 100%;
+                  height: 18px;
+                  border-radius: 999px;
+                  overflow: hidden;
+                  background: rgba(148, 163, 184, 0.12);
                 "
               >
                 <div
-                  :style="'width:16px; background:var(--green); border-radius:3px 3px 0 0; height:' + barHeight(creditsByMonth[month]) + 'px;'"
-                  :title="'Inflows ' + month + ': ₹' + formatAmount(creditsByMonth[month])"
+                  :style="'width:' + barWidth(creditsByMonth[month]) + '%; height: 18px; background: var(--green); border-radius: 999px 0 0 999px; min-width: 2px;'"
+                  :title="'Inflows ' + month + ': ' + acctSymbol + formatAmount(creditsByMonth[month])"
                 ></div>
                 <div
-                  :style="'width:16px; background:var(--red-mid); border-radius:3px 3px 0 0; height:' + barHeight(debitsByMonth[month]) + 'px;'"
-                  :title="'Outflows ' + month + ': ₹' + formatAmount(debitsByMonth[month])"
+                  :style="'width:' + barWidth(debitsByMonth[month]) + '%; height: 18px; background: var(--red-mid); border-radius: 0 999px 999px 0; min-width: 2px;'"
+                  :title="'Outflows ' + month + ': ' + acctSymbol + formatAmount(debitsByMonth[month])"
                 ></div>
               </div>
-              <small
-                style="font-size: 10px; color: var(--gray-500)"
-                x-text="month"
-              ></small>
+
+              <div
+                style="
+                  font-size: 9px;
+                  line-height: 1.2;
+                  color: var(--gray-500);
+                  text-align: right;
+                "
+              >
+                <div
+                  x-text="acctSymbol + formatAmount(creditsByMonth[month])"
+                ></div>
+                <div
+                  x-text="acctSymbol + formatAmount(debitsByMonth[month])"
+                ></div>
+              </div>
             </div>
           </template>
         </div>
@@ -291,7 +312,7 @@
         >
           Minimum observed balance:
           <strong
-            >₹<span x-text="formatAmount(balanceTrend.min_balance)"></span
+            x-text="acctSymbol + formatAmount(balanceTrend.min_balance)"
           ></strong>
         </p>
       </div>
@@ -457,7 +478,7 @@
           <div class="alert alert-info">
             <strong
               style="font-size: 18px"
-              x-text="'₹' + formatAmount(drawerData.value)"
+              x-text="(drawerData.currency ? currencySymbolA(drawerData.currency) : acctSymbol) + formatAmount(drawerData.value)"
             ></strong>
             <span
               class="text-sm text-muted"
@@ -494,7 +515,7 @@
                   <td x-text="t.description"></td>
                   <td
                     class="amount-credit text-right"
-                    x-text="'₹' + formatAmount(t.amount)"
+                    x-text="acctSymbol + formatAmount(t.amount)"
                   ></td>
                   <td>
                     <span
@@ -529,7 +550,7 @@
                   <td x-text="t.description"></td>
                   <td
                     class="text-right amount-neutral"
-                    x-text="'₹' + formatAmount(t.amount)"
+                    x-text="acctSymbol + formatAmount(t.amount)"
                   ></td>
                   <td
                     class="text-muted text-xs"
@@ -557,6 +578,24 @@
 <!-- end analysisPage -->
 
 <script>
+  const CURRENCY_SYMBOLS_A = {
+    INR: "₹",
+    USD: "$",
+    EUR: "€",
+    GBP: "£",
+    JPY: "¥",
+    CNY: "¥",
+    AUD: "A$",
+    CAD: "C$",
+    SGD: "S$",
+    HKD: "HK$",
+  };
+
+  function currencySymbolA(code) {
+    if (!code) return "";
+    return (CURRENCY_SYMBOLS_A[code] || code + " ") + " ";
+  }
+
   function analysisPage() {
     return {
       loading: true,
@@ -616,6 +655,10 @@
           color: "dynamic",
         },
       ],
+
+      get acctSymbol() {
+        return currencySymbolA(this.summary && this.summary.primary_currency);
+      },
 
       get creditsByMonth() {
         return (
@@ -752,7 +795,7 @@
       formatValue(key) {
         const m = this.summary[key];
         if (!m || m.value === null || m.value === undefined) return "—";
-        return "₹" + this.formatAmount(m.value);
+        return this.acctSymbol + this.formatAmount(m.value);
       },
 
       formatAmount(amount) {
@@ -774,6 +817,15 @@
         ];
         const max = Math.max(...all, 1);
         return Math.max(((value || 0) / max) * 120, 2);
+      },
+
+      barWidth(value) {
+        const all = [
+          ...Object.values(this.creditsByMonth),
+          ...Object.values(this.debitsByMonth),
+        ];
+        const max = Math.max(...all, 1);
+        return Math.min(((value || 0) / max) * 100, 100);
       },
 
       balanceY(value) {

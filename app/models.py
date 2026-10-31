@@ -286,6 +286,8 @@ class TransactionResponse(SQLModel):
     counterparty_account: Optional[str] = None
     reference_number: Optional[str] = None
     transaction_type: Optional[str] = None
+    currency: Optional[str] = None
+    custom_metadata: Optional[str] = None  # JSON string
 
 
 class StatementResponse(SQLModel):

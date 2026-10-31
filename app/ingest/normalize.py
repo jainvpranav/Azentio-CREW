@@ -197,8 +197,9 @@ def normalize_amount_with_currency(value) -> Tuple[Optional[Decimal], Optional[s
 
 def normalize_amount(value) -> Decimal:
     """
-    Parse amount, handling ₹, commas, INR suffix.
-    Returns Decimal to avoid float precision issues.
+    Parse amount from any currency-prefixed string.
+    Strips all known currency symbols and ISO codes before parsing.
+    Returns Decimal to avoid float precision issues; None for unparseable input.
     """
     if value is None:
         return None
@@ -214,14 +215,20 @@ def normalize_amount(value) -> Decimal:
 
     value = str(value).strip()
 
-    # Remove currency symbols and common suffixes
-    value = re.sub(r'[₹INR\s]', '', value)
-    value = re.sub(r'[Cc][Rr]|[Dd][Rr]', '', value)  # Cr/Dr
-    value = value.replace(',', '')
+    # Strip all recognized currency symbols (longest first to avoid prefix collisions)
+    for symbol, _ in _CURRENCY_SYMBOLS:
+        value = value.replace(symbol, '')
+
+    # Strip standalone ISO codes (e.g. "USD 1,234.56")
+    value = re.sub(r'\b[A-Z]{3}\b', '', value)
+
+    # Strip Cr/Dr suffixes and remaining whitespace
+    value = re.sub(r'[Cc][Rr]|[Dd][Rr]', '', value)
+    value = value.replace(',', '').strip()
 
     try:
         return Decimal(value)
-    except:
+    except Exception:
         return None
 
 

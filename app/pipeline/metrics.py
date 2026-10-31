@@ -1,10 +1,10 @@
 """Compute financial metrics from transactions"""
 from decimal import Decimal
 from datetime import date
-from collections import defaultdict
+from collections import defaultdict, Counter
 from sqlmodel import Session, select
 
-from app.models import Transaction, Classification, TransactionCategory, Account
+from app.models import Transaction, Classification, TransactionCategory, Account, Statement
 
 
 def compute_monthly_credits(session: Session, account_id: int) -> dict:
@@ -242,6 +242,42 @@ def _txn_ref(txn: Transaction, category, amount: Decimal) -> dict:
     }
 
 
+def _account_primary_currency(session: Session, account_id: int):
+    """Return the most common declared statement currency for this account, or None."""
+    stmts = session.exec(select(Statement).where(Statement.account_id == account_id)).all()
+    currencies = [s.currency for s in stmts if s.currency]
+    if not currencies:
+        return None
+    return Counter(currencies).most_common(1)[0][0]
+
+
+def _currency_caveats(session: Session, account_id: int, txns: list) -> list:
+    """
+    Return caveat strings when transactions span multiple currencies.
+    Metrics are always scoped to the account's primary currency; transactions
+    in other currencies are excluded from sums (never mixed).
+    """
+    currencies = [t.currency for t in txns if t.currency]
+    if not currencies:
+        return []
+    counts = Counter(currencies)
+    primary = counts.most_common(1)[0][0]
+    caveats = []
+    other = {c: n for c, n in counts.items() if c != primary}
+    if other:
+        other_str = ', '.join(f"{n} {c}" for c, n in sorted(other.items()))
+        caveats.append(
+            f"Multi-currency account: metrics are in {primary}. "
+            f"Excluded (not mixed): {other_str} transaction(s) in other currencies."
+        )
+    unknown = sum(1 for t in txns if t.currency is None)
+    if unknown:
+        caveats.append(
+            f"{unknown} transaction(s) have no determinable currency and are excluded from all sums."
+        )
+    return caveats
+
+
 def _coverage_caveats(session: Session, account_id: int):
     from app.pipeline.coverage import get_month_coverage
 
@@ -267,6 +303,18 @@ def compute_metric_detail(session: Session, account_id: int, metric_name: str) -
     classifications = _current_classification_map(session, all_txns)
     caveats, coverage_grid = _coverage_caveats(session, account_id)
 
+    # Currency isolation: restrict arithmetic to the account's primary currency.
+    # Transactions in other currencies or with unknown currency are excluded from sums.
+    primary_currency = _account_primary_currency(session, account_id)
+    caveats.extend(_currency_caveats(session, account_id, all_txns))
+
+    def _currency_ok(t: Transaction) -> bool:
+        if primary_currency is None:
+            return t.currency is None  # no currency info at all — include all null-currency txns
+        return t.currency == primary_currency or t.currency is None and primary_currency is None
+
+    currency_excluded_reason = f"different currency (not {primary_currency})" if primary_currency else "unknown currency"
+
     included, excluded = [], []
     by_month = defaultdict(Decimal)
     value = None
@@ -277,26 +325,32 @@ def compute_metric_detail(session: Session, account_id: int, metric_name: str) -
         return t.duplicate_of is not None
 
     if metric_name == "monthly_credits_gross":
-        method = "Sum of all credit transactions, duplicates removed."
+        method = "Sum of all credit transactions in primary currency, duplicates removed."
         for t in all_txns:
             if t.credit is None:
                 continue
             cat = classifications[t.id].category if classifications[t.id] else None
             if is_dup(t):
                 excluded.append({**_txn_ref(t, cat, t.credit), "exclusion_reason": "duplicate transaction"})
+                continue
+            if not _currency_ok(t):
+                excluded.append({**_txn_ref(t, cat, t.credit), "exclusion_reason": currency_excluded_reason})
                 continue
             included.append(_txn_ref(t, cat, t.credit))
             by_month[t.txn_date.strftime("%Y-%m")] += t.credit
         value = sum(by_month.values()) if by_month else Decimal(0)
 
     elif metric_name == "monthly_credits_adjusted":
-        method = "Gross credits minus internal transfers, refunds, reversals and loan disbursements."
+        method = "Gross credits in primary currency minus internal transfers, refunds, reversals and loan disbursements."
         for t in all_txns:
             if t.credit is None:
                 continue
             cat = classifications[t.id].category if classifications[t.id] else None
             if is_dup(t):
                 excluded.append({**_txn_ref(t, cat, t.credit), "exclusion_reason": "duplicate transaction"})
+                continue
+            if not _currency_ok(t):
+                excluded.append({**_txn_ref(t, cat, t.credit), "exclusion_reason": currency_excluded_reason})
                 continue
             if cat in EXCLUDE_FROM_INCOME:
                 excluded.append({**_txn_ref(t, cat, t.credit), "exclusion_reason": f"classified as {cat.value}"})
@@ -306,13 +360,16 @@ def compute_metric_detail(session: Session, account_id: int, metric_name: str) -
         value = sum(by_month.values()) if by_month else Decimal(0)
 
     elif metric_name == "monthly_debits_adjusted":
-        method = "Gross debits minus internal transfers out and reversed debits."
+        method = "Gross debits in primary currency minus internal transfers out and reversed debits."
         for t in all_txns:
             if t.debit is None:
                 continue
             cat = classifications[t.id].category if classifications[t.id] else None
             if is_dup(t):
                 excluded.append({**_txn_ref(t, cat, t.debit), "exclusion_reason": "duplicate transaction"})
+                continue
+            if not _currency_ok(t):
+                excluded.append({**_txn_ref(t, cat, t.debit), "exclusion_reason": currency_excluded_reason})
                 continue
             if cat in EXCLUDE_FROM_DEBITS:
                 excluded.append({**_txn_ref(t, cat, t.debit), "exclusion_reason": f"classified as {cat.value}"})
@@ -335,6 +392,9 @@ def compute_metric_detail(session: Session, account_id: int, metric_name: str) -
         monthly = defaultdict(Decimal)
         for t in all_txns:
             if t.credit is None or is_dup(t):
+                continue
+            if not _currency_ok(t):
+                excluded.append({**_txn_ref(t, None, t.credit), "exclusion_reason": currency_excluded_reason})
                 continue
             cls = classifications[t.id]
             cat = cls.category if cls else None
@@ -390,6 +450,7 @@ def compute_metric_detail(session: Session, account_id: int, metric_name: str) -
         "value": float(value) if value is not None else None,
         "period": period,
         "method": method,
+        "currency": primary_currency,
         "included": included,
         "excluded": excluded,
         "caveats": caveats,
@@ -401,15 +462,18 @@ def compute_metric_detail(session: Session, account_id: int, metric_name: str) -
 def get_metrics_summary(session: Session, account_id: int) -> dict:
     """Headline value + monthly series per metric, for cards + charts (no included/excluded payload)."""
     summary = {}
+    primary_currency = _account_primary_currency(session, account_id)
     for name in METRIC_NAMES:
         detail = compute_metric_detail(session, account_id, name)
         summary[name] = {
             "name": name,
             "value": detail.get("value"),
             "period": detail.get("period"),
+            "currency": detail.get("currency"),
             "by_month": detail.get("by_month", {}),
             "caveats": detail.get("caveats", []),
         }
+    summary["primary_currency"] = primary_currency
     summary["coverage_grid"] = compute_metric_detail(session, account_id, "monthly_credits_gross").get("coverage_grid", {})
     return summary
 
