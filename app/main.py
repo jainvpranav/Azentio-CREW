@@ -1,5 +1,10 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from starlette.requests import Request
+import os
 
 from app.db import create_db_and_tables, engine, get_session
 from app import models
@@ -17,6 +22,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static files
+template_dir = os.path.join(os.path.dirname(__file__), "templates")
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+templates = Jinja2Templates(directory=template_dir)
 
 # Include routers
 app.include_router(documents.router)
@@ -58,6 +69,26 @@ def reset_database(session = Depends(get_session)):
     create_db_and_tables()
 
     return {"message": "Database reset"}
+
+
+# ===================== HTML Pages =====================
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    """Upload page"""
+    return templates.TemplateResponse("upload.html", {"request": request, "page": "home"})
+
+
+@app.get("/transactions", response_class=HTMLResponse)
+async def view_transactions(request: Request):
+    """Transactions page"""
+    return templates.TemplateResponse("transactions.html", {"request": request, "page": "transactions"})
+
+
+@app.get("/analysis", response_class=HTMLResponse)
+async def view_analysis(request: Request):
+    """Analysis page"""
+    return templates.TemplateResponse("analysis.html", {"request": request, "page": "analysis"})
 
 
 if __name__ == "__main__":

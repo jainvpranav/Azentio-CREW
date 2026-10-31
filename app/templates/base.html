@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bank Statement Analyzer{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>📊 Bank Statement Analyzer</h1>
+            <nav class="nav">
+                <a href="/" class="{% if page == 'home' %}active{% endif %}">Upload</a>
+                <a href="/transactions" class="{% if page == 'transactions' %}active{% endif %}">Transactions</a>
+                <a href="/analysis" class="{% if page == 'analysis' %}active{% endif %}">Analysis</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer style="text-align: center; padding: 20px; color: #999; border-top: 1px solid #eee; margin-top: 40px;">
+        <p>Bank Statement Analyzer v0.1.0 | Data stays local</p>
+    </footer>
+</body>
+</html>

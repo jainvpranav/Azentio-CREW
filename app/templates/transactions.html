@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - Bank Statement Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="transactionsPage()" x-init="loadTransactions()" class="card">
+    <h2>Transactions</h2>
+
+    <!-- Filters -->
+    <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+        <input
+            type="text"
+            placeholder="Search description..."
+            x-model="search"
+            @input="filterTransactions()"
+            style="flex: 1; min-width: 200px;"
+        >
+        <select x-model="categoryFilter" @change="filterTransactions()" style="min-width: 150px;">
+            <option value="">All Categories</option>
+            <option value="SALARY">Salary</option>
+            <option value="BUSINESS_RECEIPT">Business Receipt</option>
+            <option value="INTERNAL_TRANSFER">Internal Transfer</option>
+            <option value="REFUND">Refund</option>
+            <option value="UTILITIES">Utilities</option>
+            <option value="UNCLASSIFIED">Unclassified</option>
+            <option value="OTHER_EXPENSE">Other Expense</option>
+        </select>
+        <button @click="resetFilters()" class="secondary">Reset</button>
+    </div>
+
+    <!-- Summary -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px;">
+        <div style="background: #f0f9ff; padding: 12px; border-radius: 4px; border-left: 4px solid #0ea5e9;">
+            <div style="font-size: 12px; color: #666;">Total Transactions</div>
+            <div style="font-size: 20px; font-weight: bold;" x-text="transactions.length"></div>
+        </div>
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 4px; border-left: 4px solid #10b981;">
+            <div style="font-size: 12px; color: #666;">Total Credits</div>
+            <div style="font-size: 20px; font-weight: bold;" x-text="'₹' + formatAmount(totalCredits)"></div>
+        </div>
+        <div style="background: #fef2f2; padding: 12px; border-radius: 4px; border-left: 4px solid #ef4444;">
+            <div style="font-size: 12px; color: #666;">Total Debits</div>
+            <div style="font-size: 20px; font-weight: bold;" x-text="'₹' + formatAmount(totalDebits)"></div>
+        </div>
+    </div>
+
+    <!-- Message -->
+    <div x-show="loading" class="alert alert-success" style="text-align: center;">
+        <span class="loading"></span> Loading...
+    </div>
+
+    <!-- Table -->
+    <table x-show="!loading">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th style="text-align: right;">Debit</th>
+                <th style="text-align: right;">Credit</th>
+                <th style="text-align: right;">Balance</th>
+                <th>Category</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <template x-for="txn in filteredTransactions" :key="txn.id">
+                <tr :style="txn.duplicate_of ? 'opacity: 0.5; background: #f9fafb;' : ''">
+                    <td>
+                        <span x-text="txn.txn_date"></span>
+                        <br><small style="color: #999;" x-text="'Doc p.' + txn.page + ' r.' + txn.row_index"></small>
+                    </td>
+                    <td>
+                        <strong x-text="txn.description"></strong>
+                        <br><small style="color: #999;" x-show="txn.reason" x-text="txn.reason"></small>
+                    </td>
+                    <td style="text-align: right;" x-show="txn.debit" x-text="'₹' + formatAmount(txn.debit)"></td>
+                    <td style="text-align: right;" x-show="!txn.debit || txn.credit" x-text="txn.credit ? '₹' + formatAmount(txn.credit) : ''"></td>
+                    <td style="text-align: right; color: #666;" x-text="txn.balance ? '₹' + formatAmount(txn.balance) : '-'"></td>
+                    <td>
+                        <span
+                            :class="getCategoryClass(txn.category)"
+                            style="font-size: 11px; padding: 4px 8px; border-radius: 3px; background: #f0f0f0; color: #333;"
+                            x-text="txn.category || 'UNCLASSIFIED'"
+                        ></span>
+                        <span x-show="txn.duplicate_of" style="font-size: 10px; color: #999;">🔄 Dup</span>
+                    </td>
+                    <td>
+                        <button
+                            @click="editCategory(txn)"
+                            class="secondary"
+                            style="padding: 4px 8px; font-size: 11px;"
+                            :disabled="txn.duplicate_of"
+                        >Edit</button>
+                    </td>
+                </tr>
+            </template>
+        </tbody>
+    </table>
+
+    <p x-show="!loading && filteredTransactions.length === 0" style="text-align: center; color: #999; padding: 40px;">
+        No transactions found
+    </p>
+</div>
+
+<!-- Edit Modal -->
+<div x-show="editModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: white; padding: 20px; border-radius: 8px; max-width: 400px; width: 90%;">
+        <h3 x-text="'Reclassify: ' + (currentTxn?.description || '')"></h3>
+        <div class="form-group mt-2">
+            <label>New Category</label>
+            <select x-model="newCategory">
+                <option value="SALARY">Salary</option>
+                <option value="BUSINESS_RECEIPT">Business Receipt</option>
+                <option value="INTERNAL_TRANSFER">Internal Transfer</option>
+                <option value="REFUND">Refund</option>
+                <option value="LOAN_DISBURSEMENT">Loan Disbursement</option>
+                <option value="LOAN_EMI">Loan EMI</option>
+                <option value="RENT">Rent</option>
+                <option value="UTILITIES">Utilities</option>
+                <option value="CARD_PAYMENT">Card Payment</option>
+                <option value="OTHER_EXPENSE">Other Expense</option>
+                <option value="CASH_DEPOSIT">Cash Deposit</option>
+                <option value="CASH_WITHDRAWAL">Cash Withdrawal</option>
+                <option value="BANK_CHARGES">Bank Charges</option>
+                <option value="INTEREST">Interest</option>
+                <option value="UNCLASSIFIED">Unclassified</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Note (optional)</label>
+            <input type="text" x-model="newNote" placeholder="Add a note...">
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button @click="saveCategory()" style="flex: 1;">Save</button>
+            <button @click="editModal = false" class="secondary" style="flex: 1;">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function transactionsPage() {
+    return {
+        transactions: [],
+        filteredTransactions: [],
+        loading: true,
+        search: '',
+        categoryFilter: '',
+        totalCredits: 0,
+        totalDebits: 0,
+        editModal: false,
+        currentTxn: null,
+        newCategory: '',
+        newNote: '',
+
+        async loadTransactions() {
+            try {
+                const response = await fetch('/api/transactions/');
+                this.transactions = await response.json();
+                this.filterTransactions();
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        filterTransactions() {
+            let filtered = this.transactions;
+
+            if (this.search) {
+                const q = this.search.toLowerCase();
+                filtered = filtered.filter(t =>
+                    t.description.toLowerCase().includes(q)
+                );
+            }
+
+            if (this.categoryFilter) {
+                filtered = filtered.filter(t =>
+                    t.category === this.categoryFilter
+                );
+            }
+
+            this.filteredTransactions = filtered.sort((a, b) =>
+                new Date(b.txn_date) - new Date(a.txn_date)
+            );
+
+            this.totalCredits = filtered.reduce((sum, t) => sum + (t.credit || 0), 0);
+            this.totalDebits = filtered.reduce((sum, t) => sum + (t.debit || 0), 0);
+        },
+
+        resetFilters() {
+            this.search = '';
+            this.categoryFilter = '';
+            this.filterTransactions();
+        },
+
+        editCategory(txn) {
+            this.currentTxn = txn;
+            this.newCategory = txn.category || 'UNCLASSIFIED';
+            this.newNote = '';
+            this.editModal = true;
+        },
+
+        async saveCategory() {
+            if (!this.currentTxn) return;
+
+            try {
+                const response = await fetch(`/api/transactions/${this.currentTxn.id}/reclassify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category: this.newCategory,
+                        note: this.newNote
+                    })
+                });
+
+                this.editModal = false;
+                this.loadTransactions();
+                alert('Category updated!');
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        },
+
+        getCategoryClass(cat) {
+            const colors = {
+                SALARY: '#dcfce7',
+                BUSINESS_RECEIPT: '#dcfce7',
+                UTILITIES: '#fef3c7',
+                RENT: '#fef3c7',
+                UNCLASSIFIED: '#e5e7eb'
+            };
+            return colors[cat] || '#f0f0f0';
+        },
+
+        formatAmount(amount) {
+            if (!amount) return '0.00';
+            return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+    }
+}
+</script>
+{% endblock %}

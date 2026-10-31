@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Upload - Bank Statement Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="uploadPage()" class="card">
+    <h2>Upload Bank Statements</h2>
+    <p style="color: #666; margin-bottom: 20px;">Supported formats: PDF, CSV, Excel (XLSX/XLS)</p>
+
+    <!-- Upload Area -->
+    <div
+        class="upload-area"
+        @click="$refs.fileInput.click()"
+        @dragover.prevent="dragActive = true"
+        @dragleave.prevent="dragActive = false"
+        @drop.prevent="handleDrop"
+        :style="dragActive ? 'background-color: #f0f9ff; border-color: #0ea5e9;' : ''"
+    >
+        <p style="font-size: 20px; margin-bottom: 10px;">📁</p>
+        <p><strong>Click to upload or drag files here</strong></p>
+        <p style="font-size: 12px; color: #999;">PDF, CSV, XLSX (multiple files supported)</p>
+        <input
+            type="file"
+            #fileInput
+            x-ref="fileInput"
+            multiple
+            accept=".pdf,.csv,.xlsx,.xls"
+            @change="handleFiles"
+            style="display: none;"
+        >
+    </div>
+
+    <!-- File List -->
+    <div x-show="files.length > 0" style="margin-top: 20px;">
+        <h3 style="margin-bottom: 10px;">Files to upload:</h3>
+        <div style="background: #f9fafb; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+            <template x-for="(file, idx) in files" :key="idx">
+                <div style="padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                    <span x-text="file.name"></span>
+                    <button
+                        type="button"
+                        class="secondary"
+                        style="padding: 4px 8px; font-size: 12px;"
+                        @click="removeFile(idx)"
+                    >Remove</button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Upload Button -->
+    <div style="margin-top: 20px;">
+        <button
+            @click="uploadFiles()"
+            :disabled="files.length === 0 || uploading"
+            style="width: 100%; padding: 12px; font-size: 16px;"
+        >
+            <span x-show="!uploading">Upload <span x-text="files.length"></span> file(s)</span>
+            <span x-show="uploading"><span class="loading"></span> Uploading...</span>
+        </button>
+    </div>
+
+    <!-- Messages -->
+    <div x-show="message" :class="'alert alert-' + messageType" style="margin-top: 20px;">
+        <span x-text="message"></span>
+    </div>
+
+    <!-- Upload Results -->
+    <div x-show="results.length > 0" style="margin-top: 30px;">
+        <h3>Upload Results:</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Status</th>
+                    <th>Transactions</th>
+                    <th>Pages</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="result in results" :key="result.filename">
+                    <tr>
+                        <td x-text="result.filename"></td>
+                        <td>
+                            <span
+                                class="status-pill"
+                                :class="'status-' + result.status"
+                                x-text="result.status"
+                            ></span>
+                        </td>
+                        <td x-text="result.transactions_count || '-'"></td>
+                        <td x-text="result.pages_parsed ? result.pages_parsed + '/' + result.pages_total : '-'"></td>
+                        <td>
+                            <small x-text="result.error || (result.pages_parsed ? '✓ OK' : '')"></small>
+                            <div x-show="result.errors && result.errors.length > 0" style="font-size: 11px; color: #d97706;">
+                                <template x-for="error in result.errors">
+                                    <div>📄 p.<span x-text="error.page"></span>: <span x-text="error.reason"></span></div>
+                                </template>
+                            </div>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+
+        <button @click="goToTransactions()" class="mt-2">View Transactions →</button>
+    </div>
+</div>
+
+<script>
+function uploadPage() {
+    return {
+        files: [],
+        results: [],
+        uploading: false,
+        dragActive: false,
+        message: '',
+        messageType: 'success',
+
+        handleFiles(e) {
+            this.files = Array.from(e.target.files);
+        },
+
+        handleDrop(e) {
+            this.dragActive = false;
+            this.files = Array.from(e.dataTransfer.files);
+        },
+
+        removeFile(idx) {
+            this.files.splice(idx, 1);
+        },
+
+        async uploadFiles() {
+            if (this.files.length === 0) return;
+
+            this.uploading = true;
+            this.message = '';
+            this.results = [];
+
+            const formData = new FormData();
+            this.files.forEach(file => {
+                formData.append('files', file);
+            });
+
+            try {
+                const response = await fetch('/api/documents/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+                this.results = data.results;
+
+                const successful = data.results.filter(r => r.status === 'parsed' || r.status === 'partial').length;
+                this.message = `Uploaded ${successful}/${data.results.length} files`;
+                this.messageType = successful === data.results.length ? 'success' : 'warning';
+
+                // Auto-process
+                setTimeout(() => this.processAll(), 500);
+            } catch (error) {
+                this.message = 'Upload failed: ' + error.message;
+                this.messageType = 'error';
+            } finally {
+                this.uploading = false;
+            }
+        },
+
+        async processAll() {
+            try {
+                const response = await fetch('/api/statements/process-all', { method: 'POST' });
+                const data = await response.json();
+                console.log('Processing complete:', data);
+            } catch (error) {
+                console.error('Processing error:', error);
+            }
+        },
+
+        goToTransactions() {
+            window.location.href = '/transactions';
+        }
+    }
+}
+</script>
+{% endblock %}
