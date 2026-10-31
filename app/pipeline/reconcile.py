@@ -22,6 +22,22 @@ def reconcile_statement(session: Session, statement_id: int) -> dict:
     if not statement:
         return {"error": "Statement not found"}
 
+    if statement.opening_balance is None or statement.closing_balance is None:
+        statement.reconciled = False
+        statement.discrepancy = None
+        session.add(statement)
+        session.commit()
+        return {
+            "reconciled": False,
+            "statement_id": statement_id,
+            "opening_balance": None,
+            "closing_balance": None,
+            "computed_closing": None,
+            "discrepancy": None,
+            "discrepancy_rows": [],
+            "error": "opening_or_closing_balance_unknown",
+        }
+
     # Get all transactions for this statement, in order
     transactions = session.exec(
         select(Transaction)

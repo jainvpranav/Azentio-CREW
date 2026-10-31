@@ -44,11 +44,6 @@ def on_startup():
 
 # ===================== Routes =====================
 
-@app.get("/")
-def root():
-    return {"message": "Bank Statement Analyzer API v0.1.0"}
-
-
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -90,6 +85,12 @@ async def view_transactions(request: Request):
 async def view_analysis(request: Request):
     """Analysis page"""
     return templates.TemplateResponse("analysis.html", {"request": request, "page": "analysis"})
+
+
+@app.get("/review", response_class=HTMLResponse)
+async def view_review(request: Request):
+    """Review page (flags + classification audit trail)"""
+    return templates.TemplateResponse("review.html", {"request": request, "page": "review"})
 
 
 if __name__ == "__main__":

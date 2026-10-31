@@ -2,13 +2,61 @@
 from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.db import get_session
 from app.models import Transaction, TransactionResponse, TransactionCategory, Classification
 
 
+class ReclassifyRequest(BaseModel):
+    category: TransactionCategory
+    note: Optional[str] = None
+
+
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+
+@router.get("/audit/corrections")
+def get_corrections(session: Session = Depends(get_session)):
+    """
+    Classification audit trail: every transaction with more than one
+    Classification row (i.e. corrected at least once), original and current
+    both visible (append-only per BUILD_PLAN principle #4).
+    """
+    all_classifications = session.exec(
+        select(Classification).order_by(Classification.txn_id, Classification.created_at)
+    ).all()
+
+    by_txn: dict = {}
+    for c in all_classifications:
+        by_txn.setdefault(c.txn_id, []).append(c)
+
+    corrections = []
+    for txn_id, history in by_txn.items():
+        if len(history) < 2:
+            continue
+        txn = session.get(Transaction, txn_id)
+        corrections.append({
+            "txn_id": txn_id,
+            "description": txn.description if txn else None,
+            "txn_date": txn.txn_date.isoformat() if txn else None,
+            "history": [
+                {
+                    "category": c.category,
+                    "rule_id": c.rule_id,
+                    "reason": c.reason,
+                    "source": c.source,
+                    "is_current": c.is_current,
+                    "user_note": c.user_note,
+                    "created_at": c.created_at.isoformat(),
+                }
+                for c in history
+            ],
+        })
+
+    corrections.sort(key=lambda c: c["history"][-1]["created_at"], reverse=True)
+    return {"total": len(corrections), "corrections": corrections}
 
 
 @router.get("/", response_model=List[TransactionResponse])
@@ -110,8 +158,7 @@ def get_transaction(txn_id: int, session: Session = Depends(get_session)):
 @router.post("/{txn_id}/reclassify")
 def reclassify_transaction(
     txn_id: int,
-    category: TransactionCategory,
-    note: Optional[str] = None,
+    body: ReclassifyRequest,
     session: Session = Depends(get_session),
 ):
     """Reclassify a transaction (user override)"""
@@ -128,15 +175,16 @@ def reclassify_transaction(
 
     if old_classification:
         old_classification.is_current = False
+        session.add(old_classification)
 
     # Create new classification
     new_classification = Classification(
         txn_id=txn_id,
-        category=category,
-        reason=note or "User reclassification",
+        category=body.category,
+        reason=body.note or "User reclassification",
         source="user",
         is_current=True,
-        user_note=note,
+        user_note=body.note,
     )
     session.add(new_classification)
     session.commit()
@@ -144,6 +192,6 @@ def reclassify_transaction(
 
     return {
         "txn_id": txn_id,
-        "new_category": category,
-        "note": note
+        "new_category": body.category,
+        "note": body.note
     }

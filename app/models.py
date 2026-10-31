@@ -73,8 +73,8 @@ class Statement(SQLModel, table=True):
     account_id: int = Field(foreign_key="account.id")
     period_start: date
     period_end: date
-    opening_balance: Decimal
-    closing_balance: Decimal
+    opening_balance: Optional[Decimal] = None
+    closing_balance: Optional[Decimal] = None
     computed_closing: Optional[Decimal] = None
     reconciled: bool = False
     discrepancy: Optional[Decimal] = None
@@ -151,8 +151,8 @@ class StatementResponse(SQLModel):
     account_id: int
     period_start: date
     period_end: date
-    opening_balance: Decimal
-    closing_balance: Decimal
+    opening_balance: Optional[Decimal] = None
+    closing_balance: Optional[Decimal] = None
     computed_closing: Optional[Decimal]
     reconciled: bool
     discrepancy: Optional[Decimal]

@@ -44,6 +44,9 @@ def normalize_amount(value) -> Decimal:
     if value is None:
         return None
 
+    if isinstance(value, float) and value != value:  # NaN (pandas empty cell)
+        return None
+
     if isinstance(value, Decimal):
         return value
 

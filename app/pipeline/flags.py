@@ -3,7 +3,7 @@ import json
 from decimal import Decimal
 from sqlmodel import Session, select
 
-from app.models import Transaction, Statement, Flag, FlagSeverity, Classification, TransactionCategory
+from app.models import Transaction, Statement, Flag, FlagSeverity, Classification, TransactionCategory, Account
 
 
 def create_flag(
@@ -57,17 +57,16 @@ def check_duplicates(session: Session) -> dict:
         select(Transaction).where(Transaction.duplicate_of != None)
     ).all()
 
-    if duplicates:
-        accounts = set(t.account_id for t in duplicates)
-        for account_id in accounts:
-            dup_ids = [t.id for t in duplicates if t.account_id == account_id]
-            create_flag(
-                session,
-                "DUPLICATES_REMOVED",
-                FlagSeverity.INFO,
-                f"Found and deduplicated {len(dup_ids)} transactions.",
-                evidence=dup_ids
-            )
+    accounts = set(t.account_id for t in duplicates)
+    for account_id in accounts:
+        dup_ids = [t.id for t in duplicates if t.account_id == account_id]
+        create_flag(
+            session,
+            "DUPLICATES_REMOVED",
+            FlagSeverity.INFO,
+            f"Found and deduplicated {len(dup_ids)} transactions.",
+            evidence=dup_ids
+        )
 
     session.commit()
     return {"flags_created": len(accounts), "type": "DUPLICATES_REMOVED"}
@@ -159,14 +158,91 @@ def check_returned_payments(session: Session) -> dict:
     return {"flags_created": count, "type": "RETURNED_PAYMENT"}
 
 
+def check_missing_months(session: Session) -> dict:
+    """Flag accounts with missing-coverage months"""
+    from app.pipeline.coverage import get_month_coverage
+
+    accounts = session.exec(select(Account)).all()
+    count = 0
+    for account in accounts:
+        coverage = get_month_coverage(session, account.id)
+        missing = [m for m, s in coverage["coverage_grid"].items() if s == "missing"]
+        if missing:
+            create_flag(
+                session,
+                "MISSING_MONTH",
+                FlagSeverity.WARN,
+                f"No statement coverage for: {', '.join(missing)}. Not counted as zero in any metric.",
+            )
+            count += 1
+
+    session.commit()
+    return {"flags_created": count, "type": "MISSING_MONTH"}
+
+
+def check_low_balance(session: Session) -> dict:
+    """Flag months with >=5 days below the low-balance threshold (carry-forward balance)"""
+    from app.pipeline.metrics import compute_balance_trend
+
+    accounts = session.exec(select(Account)).all()
+    count = 0
+    for account in accounts:
+        trend = compute_balance_trend(session, account.id)
+        for month, days in trend["days_below_threshold"].items():
+            if days >= 5:
+                create_flag(
+                    session,
+                    "LOW_BALANCE",
+                    FlagSeverity.WARN,
+                    f"{days} days below ₹{trend['threshold']:.0f} balance in {month}.",
+                )
+                count += 1
+
+    session.commit()
+    return {"flags_created": count, "type": "LOW_BALANCE"}
+
+
+def check_income_decline(session: Session) -> dict:
+    """Flag accounts where the last 3 months' income is <70% of the prior 3 months'"""
+    from app.pipeline.metrics import compute_metric_detail
+
+    accounts = session.exec(select(Account)).all()
+    count = 0
+    for account in accounts:
+        detail = compute_metric_detail(session, account.id, "income")
+        months = sorted(detail["by_month"].keys())
+        if len(months) < 6:
+            continue
+        prior_3 = sum(detail["by_month"][m] for m in months[-6:-3])
+        last_3 = sum(detail["by_month"][m] for m in months[-3:])
+        if prior_3 > 0 and last_3 < 0.7 * prior_3:
+            create_flag(
+                session,
+                "INCOME_DECLINE",
+                FlagSeverity.WARN,
+                f"Last 3 months' income (₹{last_3:.0f}) is below 70% of the prior 3 months' (₹{prior_3:.0f}).",
+            )
+            count += 1
+
+    session.commit()
+    return {"flags_created": count, "type": "INCOME_DECLINE"}
+
+
 def generate_all_flags(session: Session) -> dict:
-    """Run all flag checks"""
+    """Run all flag checks. Re-running clears previously generated flags first (idempotent)."""
+    for flag in session.exec(select(Flag)).all():
+        session.delete(flag)
+    session.commit()
+
     results = {
         "reconciliation": check_reconciliation_mismatches(session),
         "duplicates": check_duplicates(session),
         "large_deposits": check_large_cash_deposits(session),
         "round_figures": check_round_figures(session),
         "returned": check_returned_payments(session),
+        "missing_months": check_missing_months(session),
+        "low_balance": check_low_balance(session),
+        "income_decline": check_income_decline(session),
     }
 
     total_flags = session.exec(select(Flag)).all()
@@ -178,7 +254,7 @@ def generate_all_flags(session: Session) -> dict:
 
 
 def get_flag_queue(session: Session) -> dict:
-    """Get all flags sorted by severity"""
+    """Get all flags sorted by severity, with transaction/statement context for display."""
     flags = session.exec(select(Flag)).all()
 
     by_severity = {
@@ -188,6 +264,23 @@ def get_flag_queue(session: Session) -> dict:
     }
 
     for flag in flags:
+        context = {}
+        if flag.txn_id:
+            txn = session.get(Transaction, flag.txn_id)
+            if txn:
+                context = {
+                    "txn_date": txn.txn_date.isoformat(),
+                    "description": txn.description,
+                    "amount": float(txn.credit or txn.debit or 0),
+                }
+        elif flag.statement_id:
+            stmt = session.get(Statement, flag.statement_id)
+            if stmt:
+                context = {
+                    "period_start": stmt.period_start.isoformat(),
+                    "period_end": stmt.period_end.isoformat(),
+                }
+
         severity_key = flag.severity.value.lower()
         by_severity[severity_key].append({
             "id": flag.id,
@@ -195,6 +288,7 @@ def get_flag_queue(session: Session) -> dict:
             "message": flag.message,
             "txn_id": flag.txn_id,
             "statement_id": flag.statement_id,
+            "context": context,
         })
 
     return {

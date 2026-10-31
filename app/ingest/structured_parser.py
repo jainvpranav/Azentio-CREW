@@ -3,35 +3,13 @@ import pandas as pd
 from decimal import Decimal
 from datetime import date
 from typing import Optional, List
-from difflib import SequenceMatcher
 from app.ingest.normalize import normalize_date, normalize_amount, clean_description
 from app.ingest.pdf_parser import ParsedTransaction, ParsedStatement, PDFParseError
 
 
-def fuzzy_match(header: str, candidates: List[str], threshold: float = 0.6) -> Optional[str]:
-    """
-    Fuzzy match header name to column candidates.
-    E.g., 'txn_date' matches 'transaction_date', 'Txn Date', etc.
-    """
-    header_lower = header.lower().replace('_', '').replace(' ', '')
-
-    best_match = None
-    best_ratio = threshold
-
-    for candidate in candidates:
-        candidate_lower = candidate.lower().replace('_', '').replace(' ', '')
-        ratio = SequenceMatcher(None, header_lower, candidate_lower).ratio()
-
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_match = candidate
-
-    return best_match
-
-
 def find_columns(df: pd.DataFrame) -> dict:
     """
-    Find relevant columns in dataframe by fuzzy matching.
+    Find relevant columns in dataframe by keyword matching on header names.
     Returns dict with keys: date, description, debit, credit, balance
     """
     columns = {
@@ -46,23 +24,23 @@ def find_columns(df: pd.DataFrame) -> dict:
 
     # Date column
     date_candidates = [c for c in df_cols if any(x in c.lower() for x in ['date', 'txn', 'value'])]
-    columns['date'] = fuzzy_match('date', date_candidates) or df_cols[0]
+    columns['date'] = date_candidates[0] if date_candidates else df_cols[0]
 
     # Description column
     desc_candidates = [c for c in df_cols if any(x in c.lower() for x in ['description', 'narration', 'particulars', 'remarks'])]
-    columns['description'] = fuzzy_match('description', desc_candidates) or (df_cols[1] if len(df_cols) > 1 else None)
+    columns['description'] = desc_candidates[0] if desc_candidates else (df_cols[1] if len(df_cols) > 1 else None)
 
     # Debit column
     debit_candidates = [c for c in df_cols if any(x in c.lower() for x in ['debit', 'withdrawal', 'wd', 'dr', 'out'])]
-    columns['debit'] = fuzzy_match('debit', debit_candidates)
+    columns['debit'] = debit_candidates[0] if debit_candidates else None
 
     # Credit column
     credit_candidates = [c for c in df_cols if any(x in c.lower() for x in ['credit', 'deposit', 'dep', 'cr', 'in'])]
-    columns['credit'] = fuzzy_match('credit', credit_candidates)
+    columns['credit'] = credit_candidates[0] if credit_candidates else None
 
     # Balance column
     balance_candidates = [c for c in df_cols if any(x in c.lower() for x in ['balance', 'bal'])]
-    columns['balance'] = fuzzy_match('balance', balance_candidates)
+    columns['balance'] = balance_candidates[0] if balance_candidates else None
 
     return columns
 
@@ -113,11 +91,27 @@ def parse_csv(file_path: str) -> ParsedStatement:
                 continue  # Skip malformed rows
 
         statement.pages_parsed = 1 if statement.transactions else 0
+        _infer_opening_closing(statement)
 
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"csv_read_error: {str(e)}"))
 
     return statement
+
+
+def _infer_opening_closing(statement: ParsedStatement) -> None:
+    """
+    Derive opening/closing balance from the statement's own running balance
+    column, when present. Never invented: opening = balance before the first
+    transaction's debit/credit was applied; closing = last row's balance.
+    """
+    txns = [t for t in statement.transactions if t.balance is not None]
+    if not txns:
+        return
+
+    first = txns[0]
+    statement.opening_balance = first.balance - (first.credit or Decimal(0)) + (first.debit or Decimal(0))
+    statement.closing_balance = txns[-1].balance
 
 
 def parse_excel(file_path: str) -> ParsedStatement:
@@ -167,6 +161,7 @@ def parse_excel(file_path: str) -> ParsedStatement:
                 continue
 
         statement.pages_parsed = 1 if statement.transactions else 0
+        _infer_opening_closing(statement)
 
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"excel_read_error: {str(e)}"))

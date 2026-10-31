@@ -100,39 +100,39 @@
     <p x-show="!loading && filteredTransactions.length === 0" style="text-align: center; color: #999; padding: 40px;">
         No transactions found
     </p>
-</div>
 
-<!-- Edit Modal -->
-<div x-show="editModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-    <div style="background: white; padding: 20px; border-radius: 8px; max-width: 400px; width: 90%;">
-        <h3 x-text="'Reclassify: ' + (currentTxn?.description || '')"></h3>
-        <div class="form-group mt-2">
-            <label>New Category</label>
-            <select x-model="newCategory">
-                <option value="SALARY">Salary</option>
-                <option value="BUSINESS_RECEIPT">Business Receipt</option>
-                <option value="INTERNAL_TRANSFER">Internal Transfer</option>
-                <option value="REFUND">Refund</option>
-                <option value="LOAN_DISBURSEMENT">Loan Disbursement</option>
-                <option value="LOAN_EMI">Loan EMI</option>
-                <option value="RENT">Rent</option>
-                <option value="UTILITIES">Utilities</option>
-                <option value="CARD_PAYMENT">Card Payment</option>
-                <option value="OTHER_EXPENSE">Other Expense</option>
-                <option value="CASH_DEPOSIT">Cash Deposit</option>
-                <option value="CASH_WITHDRAWAL">Cash Withdrawal</option>
-                <option value="BANK_CHARGES">Bank Charges</option>
-                <option value="INTEREST">Interest</option>
-                <option value="UNCLASSIFIED">Unclassified</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Note (optional)</label>
-            <input type="text" x-model="newNote" placeholder="Add a note...">
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 20px;">
-            <button @click="saveCategory()" style="flex: 1;">Save</button>
-            <button @click="editModal = false" class="secondary" style="flex: 1;">Cancel</button>
+    <!-- Edit Modal -->
+    <div x-show="editModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; padding: 20px; border-radius: 8px; max-width: 400px; width: 90%;">
+            <h3 x-text="'Reclassify: ' + (currentTxn?.description || '')"></h3>
+            <div class="form-group mt-2">
+                <label>New Category</label>
+                <select x-model="newCategory">
+                    <option value="SALARY">Salary</option>
+                    <option value="BUSINESS_RECEIPT">Business Receipt</option>
+                    <option value="INTERNAL_TRANSFER">Internal Transfer</option>
+                    <option value="REFUND">Refund</option>
+                    <option value="LOAN_DISBURSEMENT">Loan Disbursement</option>
+                    <option value="LOAN_EMI">Loan EMI</option>
+                    <option value="RENT">Rent</option>
+                    <option value="UTILITIES">Utilities</option>
+                    <option value="CARD_PAYMENT">Card Payment</option>
+                    <option value="OTHER_EXPENSE">Other Expense</option>
+                    <option value="CASH_DEPOSIT">Cash Deposit</option>
+                    <option value="CASH_WITHDRAWAL">Cash Withdrawal</option>
+                    <option value="BANK_CHARGES">Bank Charges</option>
+                    <option value="INTEREST">Interest</option>
+                    <option value="UNCLASSIFIED">Unclassified</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Note (optional)</label>
+                <input type="text" x-model="newNote" placeholder="Add a note...">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button @click="saveCategory()" style="flex: 1;">Save</button>
+                <button @click="editModal = false" class="secondary" style="flex: 1;">Cancel</button>
+            </div>
         </div>
     </div>
 </div>
@@ -182,8 +182,8 @@ function transactionsPage() {
                 new Date(b.txn_date) - new Date(a.txn_date)
             );
 
-            this.totalCredits = filtered.reduce((sum, t) => sum + (t.credit || 0), 0);
-            this.totalDebits = filtered.reduce((sum, t) => sum + (t.debit || 0), 0);
+            this.totalCredits = filtered.reduce((sum, t) => sum + (parseFloat(t.credit) || 0), 0);
+            this.totalDebits = filtered.reduce((sum, t) => sum + (parseFloat(t.debit) || 0), 0);
         },
 
         resetFilters() {
