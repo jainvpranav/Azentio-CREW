@@ -58,8 +58,14 @@ def slice_range(rows_with_balance: list, opening_before: D, start, end) -> dict:
 
 # ===================== PDF Layout A (table) =====================
 
+def format_money(amount: D, currency: str = "INR") -> str:
+    if amount is None:
+        return "-"
+    return f"{amount:,.2f} {currency}"
+
+
 def write_layout_a_pdf(path: str, holder: str, account_number: str, bank_name: str,
-                        start, end, opening: D, closing: D, rows: list):
+                        start, end, opening: D, closing: D, rows: list, currency: str = "INR"):
     doc = SimpleDocTemplate(path, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
     story = [
         Paragraph(f"{bank_name} — Savings Account Statement", STYLES["Title"]),
@@ -68,8 +74,8 @@ def write_layout_a_pdf(path: str, holder: str, account_number: str, bank_name: s
         Paragraph(f"Account Number: {account_number}", STYLES["Normal"]),
         Paragraph(f"Bank: {bank_name}", STYLES["Normal"]),
         Paragraph(f"Statement Period: {start:%d %b %Y} to {end:%d %b %Y}", STYLES["Normal"]),
-        Paragraph(f"Opening Balance: Rs. {opening:,.2f}", STYLES["Normal"]),
-        Paragraph(f"Closing Balance: Rs. {closing:,.2f}", STYLES["Normal"]),
+        Paragraph(f"Opening Balance: {format_money(opening, currency)}", STYLES["Normal"]),
+        Paragraph(f"Closing Balance: {format_money(closing, currency)}", STYLES["Normal"]),
         Spacer(1, 12),
     ]
 
@@ -115,7 +121,7 @@ def write_broken_balance_pdf(path: str, holder: str, account_number: str, bank_n
 # ===================== PDF Layout B (free text) =====================
 
 def write_layout_b_pdf(path: str, holder: str, account_number: str, bank_name: str,
-                        start, end, opening: D, closing: D, rows: list):
+                        start, end, opening: D, closing: D, rows: list, currency: str = "INR"):
     doc = SimpleDocTemplate(path, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
     mono = STYLES["Normal"].clone("mono")
     mono.fontName = "Courier"
@@ -129,15 +135,15 @@ def write_layout_b_pdf(path: str, holder: str, account_number: str, bank_name: s
         Paragraph(f"Name: {holder}", STYLES["Normal"]),
         Paragraph(f"A/c No: {account_number}", STYLES["Normal"]),
         Paragraph(f"Period: {start:%d-%b-%Y} to {end:%d-%b-%Y}", STYLES["Normal"]),
-        Paragraph(f"Opening Bal: {opening:,.2f}", STYLES["Normal"]),
-        Paragraph(f"Closing Bal: {closing:,.2f}", STYLES["Normal"]),
+        Paragraph(f"Opening Bal: {format_money(opening, currency)}", STYLES["Normal"]),
+        Paragraph(f"Closing Bal: {format_money(closing, currency)}", STYLES["Normal"]),
         Spacer(1, 12),
     ]
 
     for r in rows:
         side = "CR" if r["credit"] else "DR"
         amount = r["credit"] or r["debit"]
-        line = f"{r['date']:%d-%b-%Y} | {r['desc']} | {side} | {amount:,.2f} | {r['balance']:,.2f}"
+        line = f"{r['date']:%d-%b-%Y} | {r['desc']} | {side} | {amount:,.2f} {currency} | {r['balance']:,.2f} {currency}"
         story.append(Paragraph(line, mono))
 
     doc.build(story)
@@ -301,6 +307,27 @@ def main():
         {"date": "Date", "description": "Description", "debit": "Debit", "credit": "Credit"},
     )
     add_ground_truth(ground_truth, "sme_business.csv", sc.SME_LEDGER)
+
+    # ---- UAE / Oman foreign-currency examples ----
+    uae_rows = compute_balances(sc.UAE_OPENING, sc.UAE_LEDGER)
+    uae_file = slice_range(uae_rows, sc.UAE_OPENING, *sc.UAE_FILE_RANGE)
+    write_layout_a_pdf(
+        os.path.join(OUTPUT_DIR, "bank_muscat_omr_apr_sep.pdf"),
+        sc.UAE_ACCOUNT["holder_name"], sc.UAE_ACCOUNT["account_number"], sc.UAE_ACCOUNT["bank_name"],
+        sc.UAE_FILE_RANGE[0], sc.UAE_FILE_RANGE[1], uae_file["opening"], uae_file["closing"], uae_file["rows"],
+        currency=sc.UAE_ACCOUNT["currency"],
+    )
+    add_ground_truth(ground_truth, "bank_muscat_omr_apr_sep.pdf", uae_file["rows"])
+
+    aed_rows = compute_balances(sc.AED_OPENING, sc.AED_LEDGER)
+    aed_file = slice_range(aed_rows, sc.AED_OPENING, *sc.AED_FILE_RANGE)
+    write_layout_b_pdf(
+        os.path.join(OUTPUT_DIR, "emirates_nbd_aed_apr_sep.pdf"),
+        sc.AED_ACCOUNT["holder_name"], sc.AED_ACCOUNT["account_number"], sc.AED_ACCOUNT["bank_name"],
+        sc.AED_FILE_RANGE[0], sc.AED_FILE_RANGE[1], aed_file["opening"], aed_file["closing"], aed_file["rows"],
+        currency=sc.AED_ACCOUNT["currency"],
+    )
+    add_ground_truth(ground_truth, "emirates_nbd_aed_apr_sep.pdf", aed_file["rows"])
 
     with open(os.path.join(OUTPUT_DIR, "ground_truth.json"), "w", encoding="utf-8") as f:
         json.dump(ground_truth, f, indent=2)

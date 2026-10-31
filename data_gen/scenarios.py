@@ -176,3 +176,59 @@ SME_LEDGER = [
     (date(2026, 6, 15), "SUPPLIER PAYMENT TEXTILE HUB", D("79000.00"), None, "OTHER_EXPENSE"),
     (date(2026, 6, 20), "EMI PAYMENT LOAN9911", D("25000.00"), None, "LOAN_EMI"),
 ]
+
+# ---- UAE / Oman-style example account (foreign-currency demo) ----
+UAE_ACCOUNT = {
+    "holder_name": "MOHAMMED ALI",
+    "account_number": "OM123456789",
+    "bank_name": "Bank Muscat",
+    "currency": "OMR",
+}
+
+UAE_OPENING = D("3500.00")
+UAE_LEDGER = [
+    (date(2026, 4, 2), "SALARY CREDIT APR", None, D("1250.00"), "SALARY"),
+    (date(2026, 4, 5), "NEFT TO OWN A/C ABU DHABI", D("800.00"), None, "INTERNAL_TRANSFER"),
+    (date(2026, 4, 16), "OMR PAYMENTS - MUSCAT CITY MALL", D("210.00"), None, "OTHER_EXPENSE"),
+    (date(2026, 4, 24), "GAS BILL MUSCAT", D("95.00"), None, "UTILITIES"),
+    (date(2026, 5, 2), "SALARY CREDIT MAY", None, D("1250.00"), "SALARY"),
+    (date(2026, 5, 5), "CASH DEPOSIT BRANCH", None, D("500.00"), "CASH_DEPOSIT"),
+    (date(2026, 5, 9), "ATM CASH WITHDRAWAL", D("150.00"), None, "CASH_WITHDRAWAL"),
+    (date(2026, 6, 2), "SALARY CREDIT JUN", None, D("1250.00"), "SALARY"),
+    (date(2026, 6, 10), "RENT PAYMENT", D("550.00"), None, "RENT"),
+    (date(2026, 6, 18), "MOBILE RECHARGE OMAN", D("28.00"), None, "UTILITIES"),
+    (date(2026, 7, 2), "SALARY CREDIT JUL", None, D("1250.00"), "SALARY"),
+    (date(2026, 7, 12), "UPI CR FROM MIDDLE EAST RETAIL", None, D("1200.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 7, 18), "EMI PAYMENT LOAN220", D("180.00"), None, "LOAN_EMI"),
+    (date(2026, 8, 2), "SALARY CREDIT AUG", None, D("1250.00"), "SALARY"),
+    (date(2026, 8, 11), "REFUND - AIRLINE BOOKING", None, D("120.00"), "REFUND"),
+    (date(2026, 8, 20), "GST ON BANK CHARGES", D("10.00"), None, "BANK_CHARGES"),
+    (date(2026, 9, 2), "SALARY CREDIT SEP", None, D("1250.00"), "SALARY"),
+    (date(2026, 9, 18), "AUTO DEBIT LOAN", D("180.00"), None, "LOAN_EMI"),
+]
+UAE_FILE_RANGE = (date(2026, 4, 1), date(2026, 9, 30))
+
+AED_ACCOUNT = {
+    "holder_name": "FATIMA HASSAN",
+    "account_number": "AE987654321",
+    "bank_name": "Emirates NBD",
+    "currency": "AED",
+}
+
+AED_OPENING = D("19000.00")
+AED_LEDGER = [
+    (date(2026, 4, 3), "CLIENT PAYMENT - DUBAI MALL", None, D("4200.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 4, 8), "DU BILL PAYMENT", D("320.00"), None, "UTILITIES"),
+    (date(2026, 4, 14), "HOME RENT", D("11000.00"), None, "RENT"),
+    (date(2026, 5, 3), "CLIENT PAYMENT - DUBAI MALL", None, D("4300.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 5, 22), "CASH DEPOSIT BRANCH", None, D("2500.00"), "CASH_DEPOSIT"),
+    (date(2026, 6, 3), "CLIENT PAYMENT - DUBAI MALL", None, D("4200.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 6, 12), "CARD PAYMENT SHARJAH MALL", D("680.00"), None, "CARD_PAYMENT"),
+    (date(2026, 7, 3), "CLIENT PAYMENT - DUBAI MALL", None, D("4400.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 7, 18), "EMI PAYMENT LOAN875", D("1280.00"), None, "LOAN_EMI"),
+    (date(2026, 8, 3), "CLIENT PAYMENT - DUBAI MALL", None, D("4500.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 8, 19), "REFUND - WEATHER APP", None, D("95.00"), "REFUND"),
+    (date(2026, 9, 3), "CLIENT PAYMENT - DUBAI MALL", None, D("4700.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 9, 22), "BANK CHARGES", D("35.00"), None, "BANK_CHARGES"),
+]
+AED_FILE_RANGE = (date(2026, 4, 1), date(2026, 9, 30))
