@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration — Bank Statement Analyzer{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Rule Configuration</h2>
+    <p style="color: var(--gray-600); margin-bottom: 18px;">
+        Update the basic runtime thresholds used by the assessment engine. These values are saved in a local JSON file and reloaded on the next request.
+    </p>
+
+    {% if saved %}
+    <div class="success-banner">Settings saved successfully.</div>
+    {% endif %}
+
+    <form method="post" action="/config" class="config-form">
+        <div class="config-grid">
+            {% for rule in rules %}
+            <label class="config-field">
+                <span>{{ rule.label }}</span>
+                {% if rule.kind == 'checkbox' %}
+                    <input type="checkbox" name="{{ rule.key }}" {% if rule.value %}checked{% endif %}>
+                {% else %}
+                    <input
+                        type="number"
+                        name="{{ rule.key }}"
+                        value="{{ rule.value }}"
+                        step="{{ rule.step or '1' }}"
+                        min="{{ rule.min if rule.min is not none else '' }}"
+                        max="{{ rule.max if rule.max is not none else '' }}"
+                    >
+                {% endif %}
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="primary-btn">Save rules</button>
+            <a href="/" class="secondary-btn">Back to upload</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

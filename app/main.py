@@ -12,6 +12,7 @@ load_dotenv()
 from app.db import create_db_and_tables, engine, get_session
 from app import models
 from app.api import documents, transactions, statements, metrics as metrics_api, assessment
+from app.config.thresholds import RULE_CONFIG, get_rule_rows, save_runtime_rules
 
 
 # Create app
@@ -118,6 +119,43 @@ async def view_review(request: Request):
 async def view_assessment(request: Request):
     """Borrower assessment page: indicators, red flags, AI Reviewer findings, Individual/SME report."""
     return templates.TemplateResponse("assessment.html", {"request": request, "page": "assessment"})
+
+
+@app.get("/config", response_class=HTMLResponse)
+async def view_config(request: Request):
+    """Basic configuration page for editable underwriting rules."""
+    return templates.TemplateResponse("config.html", {
+        "request": request,
+        "page": "config",
+        "rules": get_rule_rows(),
+        "saved": False,
+    })
+
+
+@app.post("/config", response_class=HTMLResponse)
+async def save_config(request: Request):
+    """Persist runtime rule edits and reload the configuration form."""
+    form = await request.form()
+    updates = {}
+    for key in RULE_CONFIG:
+        if key not in form:
+            continue
+        raw_value = form.get(key)
+        if RULE_CONFIG[key]["kind"] == "checkbox":
+            updates[key] = raw_value == "on"
+        else:
+            try:
+                updates[key] = float(raw_value)
+            except (TypeError, ValueError):
+                updates[key] = raw_value
+
+    save_runtime_rules(updates)
+    return templates.TemplateResponse("config.html", {
+        "request": request,
+        "page": "config",
+        "rules": get_rule_rows(),
+        "saved": True,
+    })
 
 
 if __name__ == "__main__":

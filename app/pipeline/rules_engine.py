@@ -71,20 +71,20 @@ def evaluate_individual(session: Session, account_id: int) -> dict:
         "; ".join(foir.get("caveats", [])),
     ))
     indicators.append(_record(
-        session, account_id, "Rule_Ind_VNMI", "vnmi", vnmi["value"], "n/a (informational)",
+        session, account_id, "Rule_Ind_VNMI", "vnmi", vnmi["value"], "informational - not used in risk assessment",
         "computed" if vnmi["value"] is not None else "NOT_AVAILABLE", vnmi.get("period"),
         _txn_ids(vnmi), "complete" if vnmi["value"] is not None else "insufficient_data",
         "; ".join(vnmi.get("caveats", [])),
     ))
     indicators.append(_record(
-        session, account_id, "Rule_Ind_NAMB", "namb", namb["value"], "n/a (informational)",
+        session, account_id, "Rule_Ind_NAMB", "namb", namb["value"], "informational - not used in risk assessment",
         "computed" if namb["value"] is not None else "NOT_AVAILABLE", namb.get("period"),
         _txn_ids(namb), "approximation" if namb.get("caveats") else "complete",
         "; ".join(namb.get("caveats", [])),
     ))
     indicators.append(_record(
         session, account_id, "Rule_Ind_DiscretionaryRatio", "discretionary_spending_ratio",
-        discretionary["value"], "n/a (informational)",
+        discretionary["value"], "informational - not used in risk assessment",
         "computed" if discretionary["value"] is not None else "NOT_AVAILABLE", discretionary.get("period"),
         _txn_ids(discretionary), "complete", "; ".join(discretionary.get("caveats", [])),
     ))
