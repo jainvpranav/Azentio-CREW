@@ -8,7 +8,7 @@ import os
 
 from app.db import create_db_and_tables, engine, get_session
 from app import models
-from app.api import documents, transactions, statements
+from app.api import documents, transactions, statements, metrics as metrics_api
 
 
 # Create app
@@ -33,6 +33,7 @@ templates = Jinja2Templates(directory=template_dir)
 app.include_router(documents.router)
 app.include_router(transactions.router)
 app.include_router(statements.router)
+app.include_router(metrics_api.router)
 
 # Initialize database
 @app.on_event("startup")
