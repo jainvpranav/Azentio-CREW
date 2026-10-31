@@ -1,100 +1,173 @@
 {% extends "base.html" %}
 
-{% block title %}Assessment - Bank Statement Analyzer{% endblock %}
+{% block title %}Borrower Assessment — Credit Analyst{% endblock %}
 
 {% block content %}
-<div x-data="assessmentPage()" x-init="loadAccounts()" class="card">
-    <h2>Borrower Assessment</h2>
-    <p class="text-sm text-muted">Explainable indicators for analyst review. Not an automated approve/reject decision, and never a fraud/default determination.</p>
+<div x-data="assessmentPage()" x-init="loadAccounts()">
 
-    <div x-show="accounts.length === 0" style="text-align: center; color: #999; padding: 40px;">
-        No accounts yet. <a href="/" style="color: #3b82f6;">Go to Upload &rarr;</a>
+    <!-- Page header -->
+    <div style="margin-bottom:20px;">
+        <h2 style="font-size:22px; font-weight:700; color:var(--gray-900); margin-bottom:4px;">Borrower Assessment</h2>
+        <p class="text-sm text-muted">Explainable risk indicators for analyst review.
+            All bands are advisory — no automated approval, rejection, or fraud determination is made.</p>
+    </div>
+
+    <div x-show="accounts.length === 0" class="alert alert-info" style="text-align:center;">
+        No accounts yet. <a href="/" style="color:var(--primary-mid); font-weight:600;">Go to Upload &rarr;</a>
     </div>
 
     <template x-if="accounts.length > 0">
         <div>
-            <div class="flex gap-3" style="align-items: flex-end; margin: 15px 0;">
-                <div class="form-group" style="max-width: 320px; margin-bottom: 0;">
-                    <label>Account</label>
-                    <select x-model.number="selectedAccountId" @change="loadReport()">
-                        <template x-for="acc in accounts" :key="acc.id">
-                            <option :value="acc.id" x-text="acc.bank_name + ' — XXXX' + String(acc.account_number).slice(-4)"></option>
-                        </template>
-                    </select>
+            <!-- Controls bar -->
+            <div class="card" style="padding:16px;">
+                <div class="flex gap-3 flex-wrap items-center">
+                    <div class="form-group" style="max-width:320px; margin-bottom:0; flex:1; min-width:200px;">
+                        <label>Account</label>
+                        <select x-model.number="selectedAccountId" @change="loadReport()">
+                            <template x-for="acc in accounts" :key="acc.id">
+                                <option :value="acc.id" x-text="acc.bank_name + ' — ****' + String(acc.account_number).slice(-4)"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group" style="max-width:200px; margin-bottom:0;">
+                        <label>Borrower Type</label>
+                        <select x-model="entityTypeOverride" @change="loadReport()">
+                            <option value="">Use stored customer link</option>
+                            <option value="INDIVIDUAL">Individual / Retail</option>
+                            <option value="SME">Small &amp; Medium Enterprise</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; padding-top:4px;">
+                        <button @click="runPipeline()" :disabled="running">
+                            <span x-show="!running">&#9654; Run Anomaly &amp; Red-Flag Checks</span>
+                            <span x-show="running"><span class="loading"></span> Running…</span>
+                        </button>
+                        <button @click="runAIReview()" :disabled="running" class="secondary">&#9733; Run AI Reviewer</button>
+                    </div>
                 </div>
-                <div class="form-group" style="max-width: 200px; margin-bottom: 0;">
-                    <label>Entity type (for this view)</label>
-                    <select x-model="entityTypeOverride" @change="loadReport()">
-                        <option value="">Use stored customer link</option>
-                        <option value="INDIVIDUAL">Individual</option>
-                        <option value="SME">SME</option>
-                    </select>
-                </div>
-                <button @click="runPipeline()" :disabled="running">Run anomalies + red flags</button>
-                <button @click="runAIReview()" :disabled="running" class="secondary">Run AI Reviewer</button>
+                <div x-show="lastActionMessage" class="alert alert-success text-sm" style="margin-top:12px; margin-bottom:0;" x-text="lastActionMessage"></div>
             </div>
 
-            <div x-show="running" class="alert alert-success"><span class="loading"></span> Running...</div>
-            <div x-show="lastActionMessage" class="alert alert-success text-sm" x-text="lastActionMessage"></div>
+            <div x-show="loadingReport" class="alert alert-info" style="text-align:center; margin-top:14px;">
+                <span class="loading"></span>&nbsp; Loading assessment report…
+            </div>
+            <div x-show="!loadingReport && !report && accounts.length > 0" class="alert alert-info" style="margin-top:14px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <span>Assessment report not yet loaded.</span>
+                <button @click="loadReport()" class="secondary" style="white-space:nowrap;">Load Report</button>
+            </div>
 
             <template x-if="report">
                 <div>
-                    <div class="alert" :class="reviewPriorityClass">
-                        <strong x-text="report.report_type + ' report'"></strong> —
-                        review priority: <strong x-text="report.review_priority"></strong>
-                        <div class="text-sm" x-text="report.review_priority_note"></div>
+                    <!-- Review priority banner -->
+                    <div
+                        class="alert"
+                        :class="reviewPriorityClass"
+                        style="border-left-width:5px; margin-top:0;"
+                    >
+                        <div class="flex justify-between flex-wrap gap-2 items-center">
+                            <div>
+                                <strong x-text="reportTypeLabel + ' Assessment'"></strong>
+                                &mdash; Review Priority: <strong x-text="reviewPriorityLabel"></strong>
+                            </div>
+                            <span class="badge" :class="reviewBadgeClass" x-text="reviewPriorityLabel"></span>
+                        </div>
+                        <div class="text-sm" style="margin-top:4px; opacity:0.85;" x-text="report.review_priority_note"></div>
                     </div>
 
-                    <h3 class="mt-2">Indicators</h3>
-                    <table>
-                        <thead>
-                            <tr><th>Rule</th><th>Metric</th><th>Value</th><th>Band / result</th><th>Confidence</th></tr>
-                        </thead>
-                        <tbody>
-                            <template x-for="i in report.indicators" :key="i.rule_id">
+                    <!-- ── Risk Indicators ─────────────────────────── -->
+                    <div class="section-title">Risk Indicators</div>
+                    <p class="text-xs text-muted" style="margin:-8px 0 12px;">
+                        Each metric is evaluated against configurable thresholds. Band colours:
+                        <span class="badge badge-pass" style="font-size:10px;">Pass / Low burden</span>
+                        <span class="badge badge-marginal" style="font-size:10px; margin-left:4px;">Marginal / Elevated</span>
+                        <span class="badge badge-fail" style="font-size:10px; margin-left:4px;">Higher burden / Fail</span>
+                    </p>
+
+                    <div class="card" style="padding:0; overflow:hidden;">
+                        <table class="indicator-table">
+                            <thead>
                                 <tr>
-                                    <td x-text="i.rule_id"></td>
-                                    <td x-text="i.metric_name"></td>
-                                    <td x-text="formatIndicatorValue(i.metric_value)"></td>
-                                    <td><span class="status-pill" x-text="i.result"></span></td>
-                                    <td><small x-text="i.confidence"></small></td>
+                                    <th>Rule ID</th>
+                                    <th>Metric</th>
+                                    <th style="text-align:right;">Value</th>
+                                    <th>Threshold Band</th>
+                                    <th>Result</th>
+                                    <th>Data Quality</th>
                                 </tr>
-                            </template>
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                <template x-for="i in report.indicators" :key="i.rule_id">
+                                    <tr>
+                                        <td><span class="rule-id-cell" x-text="i.rule_id"></span></td>
+                                        <td style="font-weight:500;" x-text="friendlyMetricName(i.metric_name)"></td>
+                                        <td style="text-align:right; font-variant-numeric:tabular-nums; font-weight:600;"
+                                            x-text="formatIndicatorValue(i.metric_name, i.metric_value)"></td>
+                                        <td class="text-xs text-muted" x-text="i.threshold_label"></td>
+                                        <td><span class="badge" :class="'badge-' + (i.result || 'computed').toLowerCase().replace(/\s/g,'_')" x-text="friendlyResult(i.result)"></span></td>
+                                        <td><span class="badge" :class="confidenceClass(i.confidence)" x-text="i.confidence"></span></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
 
-                    <h3 class="mt-2">Red flags <small class="text-muted">(grouped by type)</small></h3>
+                    <!-- ── Red Flags ───────────────────────────────── -->
+                    <div class="section-title">Red Flags <small style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--gray-400);">grouped by category</small></div>
+
                     <template x-if="Object.keys(report.red_flags).length === 0">
-                        <p class="text-sm text-muted">No red flags raised.</p>
+                        <div class="alert alert-success">
+                            <strong>No red flags raised</strong> &mdash; no anomalous patterns detected on the available data.
+                        </div>
                     </template>
+
                     <template x-for="(group, flagType) in report.red_flags" :key="flagType">
-                        <div class="card" style="margin-bottom: 8px; border-left: 4px solid #f59e0b;">
-                            <strong x-text="flagType + ' (' + group.count + ')'"></strong>
-                            <span class="status-pill" x-text="group.severity"></span>
-                            <div class="text-sm text-muted" x-text="group.items[0] && group.items[0].message"></div>
-                        </div>
-                    </template>
-
-                    <h3 class="mt-2">AI Reviewer findings</h3>
-                    <template x-if="report.ai_reviewer_findings.length === 0">
-                        <p class="text-sm text-muted">No AI reviews yet for this account's flags. Click "Run AI Reviewer" above.</p>
-                    </template>
-                    <template x-for="f in report.ai_reviewer_findings" :key="f.case_id">
-                        <div class="card" style="margin-bottom: 8px; border-left: 4px solid #3b82f6;">
-                            <div class="flex" style="justify-content: space-between;">
-                                <strong x-text="f.case_id + ' — ' + f.triggered_rule"></strong>
-                                <span class="status-pill" x-text="f.recommendation"></span>
+                        <div class="flag-card" :class="'flag-' + (group.severity === 'high' ? 'high' : group.severity === 'medium' ? 'warn' : 'info')"
+                             style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+                            <div>
+                                <div class="flex gap-2 items-center" style="margin-bottom:4px;">
+                                    <strong style="font-size:13px;" x-text="friendlyFlagType(flagType)"></strong>
+                                    <span class="badge" :class="severityBadgeClass(group.severity)" x-text="group.severity + ' severity'"></span>
+                                    <span class="text-xs text-muted" x-text="group.count + ' occurrence' + (group.count > 1 ? 's' : '')"></span>
+                                </div>
+                                <div class="text-sm text-muted" x-text="group.items[0] && group.items[0].message"></div>
                             </div>
-                            <p class="text-sm"><strong>Observed:</strong> <span x-text="f.observed_facts"></span></p>
-                            <p class="text-sm" x-show="f.possible_explanations"><strong>Possible explanations:</strong> <span x-text="f.possible_explanations"></span></p>
-                            <p class="text-sm" x-show="f.unresolved_questions"><strong>Unresolved:</strong> <span x-text="f.unresolved_questions"></span></p>
-                            <p class="text-sm text-muted" x-show="!f.llm_model_name">No LLM provider configured - this is a deterministic placeholder result.</p>
-                            <p class="text-sm">Human decision: <span x-text="f.human_decision"></span></p>
                         </div>
                     </template>
 
-                    <h3 class="mt-2">Disclaimer</h3>
-                    <p class="text-sm text-muted" x-text="report.disclaimer"></p>
+                    <!-- ── AI Reviewer ─────────────────────────────── -->
+                    <div class="section-title">AI Reviewer Findings</div>
+
+                    <template x-if="report.ai_reviewer_findings.length === 0">
+                        <div class="alert alert-info text-sm">
+                            No AI review findings yet for this account. Click <strong>Run AI Reviewer</strong> above to analyse flagged cases.
+                        </div>
+                    </template>
+
+                    <template x-for="f in report.ai_reviewer_findings" :key="f.case_id">
+                        <div class="card" style="margin-bottom:10px; border-left:4px solid var(--primary-mid); padding:16px;">
+                            <div class="flex justify-between flex-wrap gap-2" style="margin-bottom:8px;">
+                                <div>
+                                    <span class="rule-id-cell" x-text="f.case_id"></span>
+                                    <strong style="margin-left:8px; font-size:13px;" x-text="f.triggered_rule"></strong>
+                                </div>
+                                <span class="badge" :class="'badge-' + (f.recommendation || '').toLowerCase().replace(/\s/g,'_')" x-text="f.recommendation"></span>
+                            </div>
+                            <div style="display:grid; gap:6px; font-size:12px;">
+                                <div><span style="color:var(--gray-500); font-weight:600;">OBSERVED:</span> <span x-text="f.observed_facts"></span></div>
+                                <div x-show="f.possible_explanations"><span style="color:var(--gray-500); font-weight:600;">POSSIBLE EXPLANATIONS:</span> <span x-text="f.possible_explanations"></span></div>
+                                <div x-show="f.unresolved_questions"><span style="color:var(--amber); font-weight:600;">UNRESOLVED:</span> <span x-text="f.unresolved_questions"></span></div>
+                                <div x-show="f.human_decision"><span style="color:var(--gray-500); font-weight:600;">HUMAN DECISION:</span> <span x-text="f.human_decision"></span></div>
+                            </div>
+                            <p class="text-xs text-muted" style="margin-top:8px;" x-show="!f.llm_model_name">
+                                &#9432; No LLM provider configured — this is a deterministic placeholder result.
+                            </p>
+                        </div>
+                    </template>
+
+                    <!-- Disclaimer -->
+                    <div class="card-inner mt-3">
+                        <p class="text-xs text-muted" x-text="report.disclaimer"></p>
+                    </div>
                 </div>
             </template>
         </div>
@@ -102,19 +175,92 @@
 </div>
 
 <script>
+/* Friendly label mappings for bank analysts */
+const METRIC_LABELS = {
+    foir: 'FOIR — Fixed Obligation to Income Ratio',
+    vnmi: 'VNMI — Verified Net Monthly Income',
+    namb: 'NAMB — Net Average Monthly Balance',
+    gbt:  'GBT — Gross Business Turnover',
+    dscr: 'DSCR — Debt Service Coverage Ratio',
+    customer_concentration:        'Customer Concentration Risk',
+    cc_od_utilization:             'Credit Card / OD Utilization',
+    trade_inflow_outflow_ratio:    'Trade Inflow-to-Outflow Ratio',
+    salary_to_obligation_ratio:    'Salary-to-Obligation Coverage',
+    discretionary_spending_ratio:  'Discretionary Spending Ratio',
+    nsf_bounce_count:              'NSF / Bounce Count',
+    round_tripping_score:          'Round-Tripping Indicator',
+    eod_balance_stress_days:       'Low-Balance Stress Days',
+};
+
+const RESULT_LABELS = {
+    pass:           'Pass',
+    lower_burden:   'Lower Burden',
+    normal:         'Normal',
+    adequate:       'Adequate',
+    favorable:      'Favorable',
+    marginal:       'Marginal',
+    elevated:       'Elevated',
+    moderate:       'Moderate',
+    concentrated:   'Concentrated',
+    fail:           'Higher Burden',
+    higher_burden:  'Higher Burden',
+    high:           'High',
+    stressed:       'Stressed',
+    critical:       'Critical',
+    computed:       'Computed',
+    not_available:  'Insufficient Data',
+    informational:  'Informational',
+};
+
+const FLAG_TYPE_LABELS = {
+    NSF_BOUNCE:             'Insufficient Funds / Bounce',
+    ROUND_TRIPPING:         'Possible Round-Tripping',
+    EOD_BALANCE_STRESS:     'Sustained Low End-of-Day Balance',
+    LARGE_CASH_WITHDRAWAL:  'Large Cash Withdrawal',
+    IRREGULAR_CREDIT:       'Irregular / One-Off Credit',
+    HIGH_FOIR:              'High Fixed Obligation Ratio (FOIR)',
+    LOW_NAMB:               'Low Net Average Monthly Balance',
+    CONCENTRATION_RISK:     'Customer Concentration Risk',
+};
+
 function assessmentPage() {
     return {
         accounts: [],
         selectedAccountId: null,
         entityTypeOverride: '',
         report: null,
+        loadingReport: false,
         running: false,
         lastActionMessage: '',
 
         get reviewPriorityClass() {
-            if (!this.report) return 'alert-success';
-            if (this.report.review_priority === 'higher_review_priority') return 'alert-warning';
-            return 'alert-success';
+            if (!this.report) return 'alert-info';
+            const p = (this.report.review_priority || '').toLowerCase();
+            if (p.includes('higher') || p.includes('high')) return 'alert alert-warning';
+            return 'alert alert-success';
+        },
+
+        get reviewBadgeClass() {
+            if (!this.report) return '';
+            const p = (this.report.review_priority || '').toLowerCase();
+            if (p.includes('higher') || p.includes('high')) return 'badge-elevated';
+            return 'badge-pass';
+        },
+
+        get reviewPriorityLabel() {
+            if (!this.report) return '';
+            const p = (this.report.review_priority || '');
+            if (p === 'higher_review_priority') return 'Higher — Requires Closer Review';
+            if (p === 'standard_review')         return 'Standard';
+            return p.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        },
+
+        get reportTypeLabel() {
+            if (!this.report) return '';
+            const t = (this.report.report_type || '').toLowerCase();
+            if (t === 'individual') return 'Individual Borrower';
+            if (t === 'sme')        return 'SME / Business Borrower';
+            return this.report.report_type;
         },
 
         async loadAccounts() {
@@ -128,9 +274,17 @@ function assessmentPage() {
 
         async loadReport() {
             if (!this.selectedAccountId) return;
-            const q = this.entityTypeOverride ? `?entity_type=${this.entityTypeOverride}` : '';
-            const res = await fetch(`/api/assessment/account/${this.selectedAccountId}/report${q}`);
-            this.report = await res.json();
+            this.loadingReport = true;
+            try {
+                const q = this.entityTypeOverride ? `?entity_type=${this.entityTypeOverride}` : '';
+                const res = await fetch(`/api/assessment/account/${this.selectedAccountId}/report${q}`);
+                const json = await res.json();
+                this.report = json;
+            } catch(e) {
+                console.error('loadReport failed:', e);
+            } finally {
+                this.loadingReport = false;
+            }
         },
 
         async runPipeline() {
@@ -139,7 +293,7 @@ function assessmentPage() {
                 await fetch(`/api/assessment/account/${this.selectedAccountId}/anomalies/run`, { method: 'POST' });
                 await fetch(`/api/assessment/account/${this.selectedAccountId}/redflags/run`, { method: 'POST' });
                 await this.loadReport();
-                this.lastActionMessage = 'Anomaly detection and red-flag metrics updated.';
+                this.lastActionMessage = 'Anomaly detection and red-flag checks completed successfully.';
             } finally {
                 this.running = false;
             }
@@ -151,18 +305,55 @@ function assessmentPage() {
                 const res = await fetch(`/api/assessment/account/${this.selectedAccountId}/ai-review/run`, { method: 'POST' });
                 const result = await res.json();
                 this.lastActionMessage = result.llm_configured
-                    ? `AI Reviewer ran on ${result.reviewed_count} case(s).`
-                    : `AI Reviewer ran on ${result.reviewed_count} case(s) - no LLM provider configured, deterministic placeholder used (see ASSUMPTIONS.md A-005).`;
+                    ? `AI Reviewer completed — ${result.reviewed_count} case(s) reviewed.`
+                    : `AI Reviewer ran on ${result.reviewed_count} case(s) — no LLM provider configured, deterministic placeholder used.`;
                 await this.loadReport();
             } finally {
                 this.running = false;
             }
         },
 
-        formatIndicatorValue(value) {
+        friendlyMetricName(name) {
+            return METRIC_LABELS[name] || name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        },
+
+        friendlyResult(result) {
+            if (!result) return '—';
+            return RESULT_LABELS[result.toLowerCase()] || result.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        },
+
+        friendlyFlagType(type) {
+            return FLAG_TYPE_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        },
+
+        formatIndicatorValue(name, value) {
             if (value === null || value === undefined) return '—';
             if (typeof value === 'string') return value;
+            /* Ratios / percentages */
+            const pctMetrics = ['foir', 'dscr', 'customer_concentration', 'cc_od_utilization',
+                                 'trade_inflow_outflow_ratio', 'discretionary_spending_ratio'];
+            if (pctMetrics.includes(name)) return (value * 100).toFixed(1) + '%';
+            /* Currency */
+            const currMetrics = ['vnmi', 'namb', 'gbt'];
+            if (currMetrics.includes(name)) return '₹' + parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
             return typeof value === 'number' ? value.toFixed(2) : String(value);
+        },
+
+        confidenceClass(confidence) {
+            if (!confidence) return 'badge-computed';
+            const c = confidence.toLowerCase();
+            if (c === 'complete' || c === 'high')   return 'badge-pass';
+            if (c === 'medium')                     return 'badge-marginal';
+            if (c === 'insufficient_data' || c === 'low') return 'badge-fail';
+            return 'badge-computed';
+        },
+
+        severityBadgeClass(severity) {
+            if (!severity) return 'badge-computed';
+            const s = severity.toLowerCase();
+            if (s === 'high')   return 'badge-fail';
+            if (s === 'medium') return 'badge-marginal';
+            return 'badge-computed';
         },
     }
 }

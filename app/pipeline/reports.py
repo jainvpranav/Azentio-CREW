@@ -13,7 +13,6 @@ from sqlmodel import Session, select
 from app.models import Flag, AIReview, Account
 from app.pipeline.metrics import compute_metric_detail
 from app.pipeline.rules_engine import evaluate_individual, evaluate_sme
-from app.pipeline import anomalies as anomalies_pipeline
 
 
 def _grouped_flags(session: Session, account_id: int) -> dict:
@@ -50,7 +49,6 @@ def _ai_review_findings(session: Session, account_id: int) -> list:
 def build_individual_report(session: Session, account_id: int) -> dict:
     account = session.get(Account, account_id)
     assessment = evaluate_individual(session, account_id)
-    anomaly_detail = anomalies_pipeline.run_all(session, account_id)
 
     monthly_income = compute_metric_detail(session, account_id, "monthly_credits_adjusted")
     monthly_expense = compute_metric_detail(session, account_id, "monthly_debits_adjusted")
@@ -73,7 +71,7 @@ def build_individual_report(session: Session, account_id: int) -> dict:
         },
         "emi_and_spending_breakdown": recurring,
         "red_flags": _grouped_flags(session, account_id),
-        "category_anomalies": anomaly_detail,
+        "category_anomalies": {},
         "ai_reviewer_findings": _ai_review_findings(session, account_id),
         "review_priority": assessment["review_priority"],
         "review_priority_note": assessment["review_priority_note"],
@@ -88,7 +86,6 @@ def build_individual_report(session: Session, account_id: int) -> dict:
 def build_sme_report(session: Session, account_id: int) -> dict:
     account = session.get(Account, account_id)
     assessment = evaluate_sme(session, account_id)
-    anomaly_detail = anomalies_pipeline.run_all(session, account_id)
 
     monthly_inflow = compute_metric_detail(session, account_id, "monthly_credits_adjusted")
     monthly_outflow = compute_metric_detail(session, account_id, "monthly_debits_adjusted")
@@ -114,7 +111,7 @@ def build_sme_report(session: Session, account_id: int) -> dict:
             "eod_balance_stress": assessment["detail"]["eod_balance_stress"],
         },
         "red_flags": _grouped_flags(session, account_id),
-        "category_anomalies": anomaly_detail,
+        "category_anomalies": {},
         "ai_reviewer_findings": _ai_review_findings(session, account_id),
         "review_priority": assessment["review_priority"],
         "review_priority_note": assessment["review_priority_note"],

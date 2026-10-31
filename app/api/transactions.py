@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from sqlalchemy import func
 from app.db import get_session
 from app.models import Transaction, TransactionResponse, TransactionCategory, Classification
 
@@ -15,6 +16,16 @@ class ReclassifyRequest(BaseModel):
 
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+
+@router.get("/count")
+def count_transactions(session: Session = Depends(get_session)):
+    """Lightweight count endpoint — avoids loading full transaction list."""
+    total = session.exec(select(func.count()).select_from(Transaction)).one()
+    duplicates = session.exec(
+        select(func.count()).select_from(Transaction).where(Transaction.duplicate_of != None)
+    ).one()
+    return {"total": total, "duplicates": duplicates}
 
 
 @router.get("/audit/corrections")

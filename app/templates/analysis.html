@@ -1,383 +1,789 @@
-{% extends "base.html" %}
-
-{% block title %}Analysis - Bank Statement Analyzer{% endblock %}
-
-{% block content %}
-<div x-data="analysisPage()" x-init="loadData()" class="card">
-    <h2>Analysis</h2>
-
-    <div x-show="loading" class="alert alert-success" style="text-align: center;">
-        <span class="loading"></span> Loading...
+{% extends "base.html" %} {% block title %}Analysis — Credit Analyst{% endblock
+%} {% block content %}
+<div x-data="analysisPage()" x-init="loadData()" style="position: relative">
+  <!-- Page Header -->
+  <div
+    style="
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 10px;
+    "
+  >
+    <div>
+      <h2
+        style="
+          font-size: 22px;
+          font-weight: 700;
+          color: var(--gray-900);
+          margin-bottom: 4px;
+        "
+      >
+        Statement Analysis
+      </h2>
+      <p class="text-sm text-muted">
+        Monthly cashflow metrics derived from ingested bank statements.
+      </p>
     </div>
-
-    <div x-show="!loading && accounts.length === 0" style="text-align: center; color: #999; padding: 40px;">
-        No accounts yet. <a href="/" style="color: #3b82f6;">Go to Upload &rarr;</a>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <button @click="refreshData()" class="secondary">&#8635; Refresh</button>
+      <button @click="resetDatabase()" class="danger">Clear All Data</button>
     </div>
+  </div>
 
-    <div x-show="!loading && evalResult && evalResult.accuracy !== null" class="alert alert-success" style="margin-bottom: 15px;">
-        Classification accuracy on test set: <strong x-text="formatPct(evalResult && evalResult.accuracy)"></strong>
-        <span class="text-sm" x-text="'(' + (evalResult && evalResult.correct) + '/' + (evalResult && evalResult.total) + ' vs data_gen ground truth)'"></span>
-    </div>
+  <div x-show="loading" class="alert alert-info" style="text-align: center">
+    <span class="loading"></span>&nbsp; Loading data…
+  </div>
 
-    <template x-if="!loading && accounts.length > 0">
-        <div>
-            <!-- Account selector -->
-            <div class="form-group" style="max-width: 320px;" x-show="accounts.length > 1">
-                <label>Account</label>
-                <select x-model.number="selectedAccountId" @change="loadAccountData()">
-                    <template x-for="acc in accounts" :key="acc.id">
-                        <option :value="acc.id" x-text="acc.bank_name + ' — XXXX' + String(acc.account_number).slice(-4)"></option>
-                    </template>
-                </select>
-            </div>
-
-            <!-- Summary Cards -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px;">
-                    <div style="font-size: 12px; opacity: 0.9;">Accounts</div>
-                    <div style="font-size: 28px; font-weight: bold;" x-text="accountCount"></div>
-                </div>
-                <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 8px;">
-                    <div style="font-size: 12px; opacity: 0.9;">Documents</div>
-                    <div style="font-size: 28px; font-weight: bold;" x-text="documentCount"></div>
-                </div>
-                <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 8px;">
-                    <div style="font-size: 12px; opacity: 0.9;">Transactions</div>
-                    <div style="font-size: 28px; font-weight: bold;" x-text="transactionCount"></div>
-                </div>
-                <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 20px; border-radius: 8px;">
-                    <div style="font-size: 12px; opacity: 0.9;">Duplicates Found</div>
-                    <div style="font-size: 28px; font-weight: bold;" x-text="duplicateCount"></div>
-                </div>
-            </div>
-
-            <!-- Metric Cards (clickable, traceable) -->
-            <h3 style="margin-bottom: 10px;">Metrics <small class="text-muted">(click a card to see exactly which transactions produced it)</small></h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 25px;">
-                <template x-for="m in metricCardList" :key="m.key">
-                    <div
-                        class="card"
-                        style="margin-bottom: 0; cursor: pointer; border-left: 4px solid #3b82f6;"
-                        @click="openDrawer(m.key)"
-                    >
-                        <div class="text-sm text-muted" x-text="m.label"></div>
-                        <div style="font-size: 22px; font-weight: bold;" x-text="formatValue(m.key)"></div>
-                        <div class="text-sm text-muted" x-text="(summary[m.key] && summary[m.key].period) || ''"></div>
-                    </div>
-                </template>
-            </div>
-
-            <!-- Monthly Credits vs Debits bar chart -->
-            <div class="card" style="background: #f9fafb;">
-                <h3>Monthly Credits vs Debits</h3>
-                <div x-show="chartMonths.length === 0" class="text-muted text-sm" style="padding: 10px 0;">No data yet.</div>
-                <div x-show="chartMonths.length > 0" style="display: flex; align-items: flex-end; gap: 16px; height: 160px; margin-top: 15px; padding: 0 5px;">
-                    <template x-for="month in chartMonths" :key="month">
-                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                            <div style="display: flex; align-items: flex-end; gap: 3px; height: 120px;">
-                                <div
-                                    :style="'width: 16px; background: #10b981; border-radius: 2px 2px 0 0; height: ' + barHeight(creditsByMonth[month]) + 'px;'"
-                                    :title="'Credits ' + month + ': ₹' + formatAmount(creditsByMonth[month])"
-                                ></div>
-                                <div
-                                    :style="'width: 16px; background: #ef4444; border-radius: 2px 2px 0 0; height: ' + barHeight(debitsByMonth[month]) + 'px;'"
-                                    :title="'Debits ' + month + ': ₹' + formatAmount(debitsByMonth[month])"
-                                ></div>
-                            </div>
-                            <small x-text="month"></small>
-                        </div>
-                    </template>
-                </div>
-                <div class="flex gap-3 text-sm" style="margin-top: 10px;">
-                    <span><span style="display:inline-block;width:10px;height:10px;background:#10b981;border-radius:2px;"></span> Credits</span>
-                    <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;"></span> Debits</span>
-                </div>
-            </div>
-
-            <!-- Balance trend line chart -->
-            <div class="card" style="background: #f9fafb; margin-top: 15px;">
-                <h3>Month-End Balance</h3>
-                <div x-show="balanceMonths.length === 0" class="text-muted text-sm" style="padding: 10px 0;">No data yet.</div>
-                <svg x-show="balanceMonths.length > 0" :viewBox="'0 0 ' + (balanceMonths.length * 80 || 80) + ' 140'" style="width: 100%; height: 140px; margin-top: 10px;">
-                    <polyline :points="balancePolylinePoints" fill="none" stroke="#3b82f6" stroke-width="2"></polyline>
-                    <template x-for="(month, idx) in balanceMonths" :key="month">
-                        <circle :cx="idx * 80 + 40" :cy="balanceY(balanceTrend.by_month[month])" r="3" fill="#3b82f6"></circle>
-                    </template>
-                </svg>
-                <div class="flex text-sm text-muted" style="justify-content: space-between;">
-                    <template x-for="month in balanceMonths" :key="month">
-                        <span x-text="month"></span>
-                    </template>
-                </div>
-                <p class="text-sm text-muted mt-2" x-show="balanceTrend.min_balance !== null">
-                    Minimum observed balance: ₹<span x-text="formatAmount(balanceTrend.min_balance)"></span>
-                </p>
-            </div>
-
-            <!-- Coverage heatmap -->
-            <div class="card" style="margin-top: 15px;">
-                <h3>Coverage</h3>
-                <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px;">
-                    <template x-for="(status, month) in coverageGrid" :key="month">
-                        <div
-                            :style="'padding: 8px 10px; border-radius: 4px; font-size: 11px; color: white; background:' + (status === 'full' ? '#10b981' : status === 'partial' ? '#f59e0b' : '#9ca3af')"
-                            :title="month + ': ' + status"
-                            x-text="month"
-                        ></div>
-                    </template>
-                </div>
-                <div class="flex gap-3 text-sm mt-2">
-                    <span><span style="display:inline-block;width:10px;height:10px;background:#10b981;border-radius:2px;"></span> Full</span>
-                    <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;"></span> Partial</span>
-                    <span><span style="display:inline-block;width:10px;height:10px;background:#9ca3af;border-radius:2px;"></span> Missing</span>
-                </div>
-            </div>
-
-            <!-- Documents -->
-            <div class="card" style="margin-top: 15px;">
-                <h3>Recent Documents</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Filename</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Pages</th>
-                            <th>Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <template x-for="doc in documents.slice(0, 5)" :key="doc.id">
-                            <tr>
-                                <td x-text="doc.filename"></td>
-                                <td x-text="doc.file_type.toUpperCase()"></td>
-                                <td>
-                                    <span class="status-pill" :class="'status-' + doc.status" x-text="doc.status"></span>
-                                </td>
-                                <td x-text="(doc.pages_parsed || 0) + '/' + (doc.pages_total || '?')"></td>
-                                <td>Just now</td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
-                <p x-show="documents.length === 0" style="text-align: center; color: #999; padding: 20px;">
-                    No documents uploaded yet. <a href="/" style="color: #3b82f6;">Go to Upload &rarr;</a>
-                </p>
-            </div>
-
-            <!-- Actions -->
-            <div style="margin-top: 20px; display: flex; gap: 10px;">
-                <button @click="refreshData()" class="secondary">Refresh</button>
-                <button @click="resetDatabase()" class="danger">Clear All Data</button>
-            </div>
-        </div>
-    </template>
-
-    <!-- Drill-down Drawer -->
-    <div
-        x-show="drawerOpen"
-        style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: flex-end; z-index: 1000;"
-        @click.self="drawerOpen = false"
+  <div
+    x-show="!loading && accounts.length === 0"
+    class="alert alert-info"
+    style="text-align: center"
+  >
+    No accounts yet.
+    <a href="/" style="color: var(--primary-mid); font-weight: 600"
+      >Go to Upload &rarr;</a
     >
-        <div style="background: white; width: 100%; max-width: 640px; height: 100%; overflow-y: auto; padding: 25px;">
-            <div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 x-text="drawerTitle"></h3>
-                <button @click="drawerOpen = false" class="secondary">Close</button>
-            </div>
+  </div>
 
-            <div x-show="drawerLoading" style="text-align: center; padding: 30px;"><span class="loading"></span></div>
+  <!-- Eval accuracy banner -->
+  <div
+    x-show="!loading && evalResult && evalResult.accuracy !== null"
+    class="alert alert-success"
+  >
+    Classification accuracy on test set:
+    <strong x-text="formatPct(evalResult && evalResult.accuracy)"></strong>
+    <span
+      class="text-sm text-muted"
+      x-text="' (' + (evalResult && evalResult.correct) + '/' + (evalResult && evalResult.total) + ' vs synthetic ground truth)'"
+    ></span>
+  </div>
 
-            <template x-if="!drawerLoading && drawerData">
-                <div>
-                    <div class="alert alert-success">
-                        <strong x-text="'₹' + formatAmount(drawerData.value)"></strong>
-                        <span class="text-sm text-muted" x-text="' · ' + drawerData.period"></span>
-                    </div>
-                    <p class="text-sm" style="margin-bottom: 10px;"><strong>Method:</strong> <span x-text="drawerData.method"></span></p>
+  <template x-if="!loading && accounts.length > 0">
+    <div>
+      <!-- Account selector -->
+      <div
+        x-show="accounts.length > 1"
+        class="form-group"
+        style="max-width: 340px; margin-bottom: 20px"
+      >
+        <label>Account</label>
+        <select x-model.number="selectedAccountId" @change="loadAccountData()">
+          <template x-for="acc in accounts" :key="acc.id">
+            <option
+              :value="acc.id"
+              x-text="acc.bank_name + ' — ****' + String(acc.account_number).slice(-4)"
+            ></option>
+          </template>
+        </select>
+      </div>
 
-                    <template x-for="caveat in drawerData.caveats" :key="caveat">
-                        <div class="alert alert-warning text-sm" x-text="caveat"></div>
-                    </template>
-
-                    <h4 class="mt-2" x-text="'Included (' + drawerData.included.length + ')'"></h4>
-                    <table>
-                        <tbody>
-                            <template x-for="t in drawerData.included" :key="'inc-' + t.id">
-                                <tr>
-                                    <td x-text="t.date"></td>
-                                    <td x-text="t.description"></td>
-                                    <td style="text-align: right;" x-text="'₹' + formatAmount(t.amount)"></td>
-                                    <td><small x-text="t.category"></small></td>
-                                </tr>
-                            </template>
-                            <tr x-show="drawerData.included.length === 0"><td colspan="4" class="text-muted text-sm">None</td></tr>
-                        </tbody>
-                    </table>
-
-                    <h4 class="mt-2" x-text="'Excluded (' + drawerData.excluded.length + ')'"></h4>
-                    <table>
-                        <tbody>
-                            <template x-for="t in drawerData.excluded" :key="'exc-' + t.id">
-                                <tr style="opacity: 0.7;">
-                                    <td x-text="t.date"></td>
-                                    <td x-text="t.description"></td>
-                                    <td style="text-align: right;" x-text="'₹' + formatAmount(t.amount)"></td>
-                                    <td><small x-text="t.exclusion_reason"></small></td>
-                                </tr>
-                            </template>
-                            <tr x-show="drawerData.excluded.length === 0"><td colspan="4" class="text-muted text-sm">None</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </template>
+      <!-- Portfolio stat chips -->
+      <div class="stat-grid">
+        <div class="stat-chip">
+          <div class="stat-number" x-text="accountCount"></div>
+          <div class="stat-label">Accounts</div>
         </div>
+        <div class="stat-chip">
+          <div class="stat-number" x-text="documentCount"></div>
+          <div class="stat-label">Statements</div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-number" x-text="transactionCount"></div>
+          <div class="stat-label">Transactions</div>
+        </div>
+        <div
+          class="stat-chip"
+          x-show="duplicateCount > 0"
+          style="border-color: var(--amber-border)"
+        >
+          <div
+            class="stat-number"
+            style="color: var(--amber)"
+            x-text="duplicateCount"
+          ></div>
+          <div class="stat-label">Duplicate Entries</div>
+        </div>
+      </div>
+
+      <!-- Cashflow Metric Cards -->
+      <div class="section-title">
+        Cashflow Metrics
+        <small
+          style="
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+            color: var(--gray-400);
+            margin-left: 8px;
+          "
+          >Click any card to see the underlying transactions</small
+        >
+      </div>
+
+      <div class="metric-grid">
+        <template x-for="m in metricCardList" :key="m.key">
+          <div
+            class="metric-card"
+            :class="getCardColorClass(m)"
+            @click="openDrawer(m.key)"
+            :title="m.hint"
+          >
+            <div class="metric-label" x-text="m.label"></div>
+            <div
+              class="metric-value"
+              :class="getValueColorClass(m)"
+              x-text="formatValue(m.key)"
+            ></div>
+            <div class="metric-hint" x-text="m.hint"></div>
+            <div
+              class="metric-period"
+              x-text="(summary[m.key] && summary[m.key].period) || ''"
+            ></div>
+            <span class="metric-click-hint">View breakdown &rsaquo;</span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Monthly Credits vs Debits chart -->
+      <div class="card card-inner" style="background: var(--surface-alt)">
+        <h3>Monthly Inflows vs Outflows</h3>
+        <div
+          x-show="chartMonths.length === 0"
+          class="text-sm text-muted"
+          style="padding: 10px 0"
+        >
+          No monthly data yet.
+        </div>
+        <div
+          x-show="chartMonths.length > 0"
+          style="
+            display: flex;
+            align-items: flex-end;
+            gap: 14px;
+            height: 160px;
+            margin-top: 16px;
+            padding: 0 5px;
+            overflow-x: auto;
+          "
+        >
+          <template x-for="month in chartMonths" :key="month">
+            <div
+              style="
+                min-width: 40px;
+                flex: 1;
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 4px;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: flex-end;
+                  gap: 3px;
+                  height: 120px;
+                "
+              >
+                <div
+                  :style="'width:16px; background:var(--green); border-radius:3px 3px 0 0; height:' + barHeight(creditsByMonth[month]) + 'px;'"
+                  :title="'Inflows ' + month + ': ₹' + formatAmount(creditsByMonth[month])"
+                ></div>
+                <div
+                  :style="'width:16px; background:var(--red-mid); border-radius:3px 3px 0 0; height:' + barHeight(debitsByMonth[month]) + 'px;'"
+                  :title="'Outflows ' + month + ': ₹' + formatAmount(debitsByMonth[month])"
+                ></div>
+              </div>
+              <small
+                style="font-size: 10px; color: var(--gray-500)"
+                x-text="month"
+              ></small>
+            </div>
+          </template>
+        </div>
+        <div class="flex gap-3 text-sm" style="margin-top: 10px">
+          <span
+            ><span
+              style="
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                background: var(--green);
+                border-radius: 2px;
+                margin-right: 4px;
+              "
+            ></span
+            >Inflows</span
+          >
+          <span
+            ><span
+              style="
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                background: var(--red-mid);
+                border-radius: 2px;
+                margin-right: 4px;
+              "
+            ></span
+            >Outflows</span
+          >
+        </div>
+      </div>
+
+      <!-- Month-end balance trend -->
+      <div
+        class="card card-inner"
+        style="background: var(--surface-alt); margin-top: 14px"
+      >
+        <h3>Month-End Balance Trend</h3>
+        <div
+          x-show="balanceMonths.length === 0"
+          class="text-sm text-muted"
+          style="padding: 10px 0"
+        >
+          No balance data yet.
+        </div>
+        <svg
+          x-show="balanceMonths.length > 0"
+          :viewBox="'0 0 ' + (balanceMonths.length * 80 || 80) + ' 140'"
+          style="width: 100%; height: 140px; margin-top: 10px"
+        >
+          <defs>
+            <linearGradient id="balGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#2563eb" stop-opacity="0.15" />
+              <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <polyline
+            :points="balancePolylinePoints"
+            fill="none"
+            stroke="var(--primary-mid)"
+            stroke-width="2.5"
+            stroke-linejoin="round"
+          ></polyline>
+          <template x-for="(month, idx) in balanceMonths" :key="month">
+            <circle
+              :cx="idx * 80 + 40"
+              :cy="balanceY(balanceTrend.by_month[month])"
+              r="4"
+              fill="var(--primary-mid)"
+              stroke="white"
+              stroke-width="2"
+            ></circle>
+          </template>
+        </svg>
+        <div
+          class="flex text-sm text-muted"
+          style="justify-content: space-between"
+        >
+          <template x-for="month in balanceMonths" :key="month">
+            <span style="font-size: 10px" x-text="month"></span>
+          </template>
+        </div>
+        <p
+          class="text-sm text-muted mt-2"
+          x-show="balanceTrend.min_balance !== null"
+        >
+          Minimum observed balance:
+          <strong
+            >₹<span x-text="formatAmount(balanceTrend.min_balance)"></span
+          ></strong>
+        </p>
+      </div>
+
+      <!-- Statement coverage heatmap -->
+      <div class="card" style="margin-top: 14px">
+        <h3>Statement Coverage</h3>
+        <p class="text-xs text-muted" style="margin-bottom: 12px">
+          Months with complete, partial, or missing statement data.
+        </p>
+        <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px">
+          <template x-for="(status, month) in coverageGrid" :key="month">
+            <div
+              class="coverage-cell"
+              :style="'background:' + (status === 'full' ? 'var(--green)' : status === 'partial' ? 'var(--amber)' : 'var(--gray-400)')"
+              :title="month + ': ' + status"
+              x-text="month"
+            ></div>
+          </template>
+        </div>
+        <div class="flex gap-3 text-sm mt-2">
+          <span
+            ><span
+              style="
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                background: var(--green);
+                border-radius: 2px;
+                margin-right: 4px;
+              "
+            ></span
+            >Full</span
+          >
+          <span
+            ><span
+              style="
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                background: var(--amber);
+                border-radius: 2px;
+                margin-right: 4px;
+              "
+            ></span
+            >Partial</span
+          >
+          <span
+            ><span
+              style="
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                background: var(--gray-400);
+                border-radius: 2px;
+                margin-right: 4px;
+              "
+            ></span
+            >Missing</span
+          >
+        </div>
+      </div>
+
+      <!-- Ingested documents -->
+      <div class="card" style="margin-top: 14px">
+        <h3>Ingested Statements</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Filename</th>
+              <th>Format</th>
+              <th>Status</th>
+              <th>Pages Parsed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="doc in documents.slice(0, 8)" :key="doc.id">
+              <tr>
+                <td x-text="doc.filename" style="font-size: 13px"></td>
+                <td>
+                  <span
+                    class="cat-tag"
+                    style="background: var(--gray-100); color: var(--gray-700)"
+                    x-text="doc.file_type.toUpperCase()"
+                  ></span>
+                </td>
+                <td>
+                  <span
+                    class="badge"
+                    :class="'badge-' + doc.status"
+                    x-text="doc.status"
+                  ></span>
+                </td>
+                <td
+                  x-text="(doc.pages_parsed || 0) + ' / ' + (doc.pages_total || '?')"
+                ></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p
+          x-show="documents.length === 0"
+          style="text-align: center; color: var(--gray-400); padding: 20px"
+        >
+          No documents uploaded yet.
+          <a href="/" style="color: var(--primary-mid)">Go to Upload &rarr;</a>
+        </p>
+      </div>
     </div>
+  </template>
+
+  <!-- ── Metric Drill-down Drawer ───────────────────── -->
+  <div
+    x-show="drawerOpen"
+    style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.55);
+      display: flex;
+      justify-content: flex-end;
+      z-index: 1000;
+    "
+    @click.self="drawerOpen = false"
+  >
+    <div
+      style="
+        background: white;
+        width: 100%;
+        max-width: 660px;
+        height: 100%;
+        overflow-y: auto;
+        padding: 28px;
+        box-shadow: var(--shadow-lg);
+      "
+    >
+      <div
+        class="flex"
+        style="
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        "
+      >
+        <div>
+          <h3
+            style="font-size: 17px; font-weight: 700"
+            x-text="drawerTitle"
+          ></h3>
+          <p class="text-xs text-muted" x-text="drawerSubtitle"></p>
+        </div>
+        <button @click="drawerOpen = false" class="secondary">Close</button>
+      </div>
+
+      <div x-show="drawerLoading" style="text-align: center; padding: 40px">
+        <span class="loading"></span>
+      </div>
+
+      <template x-if="!drawerLoading && drawerData">
+        <div>
+          <div class="alert alert-info">
+            <strong
+              style="font-size: 18px"
+              x-text="'₹' + formatAmount(drawerData.value)"
+            ></strong>
+            <span
+              class="text-sm text-muted"
+              x-text="' — ' + drawerData.period"
+            ></span>
+          </div>
+
+          <p class="text-sm" style="margin-bottom: 8px">
+            <strong>Calculation method:</strong>
+            <span x-text="drawerData.method"></span>
+          </p>
+
+          <template x-for="caveat in drawerData.caveats" :key="caveat">
+            <div class="alert alert-warning text-sm" x-text="caveat"></div>
+          </template>
+
+          <div
+            class="section-title"
+            x-text="'Included Transactions (' + drawerData.included.length + ')'"
+          ></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th class="text-right">Amount</th>
+                <th>Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in drawerData.included" :key="'inc-' + t.id">
+                <tr>
+                  <td style="white-space: nowrap" x-text="t.date"></td>
+                  <td x-text="t.description"></td>
+                  <td
+                    class="amount-credit text-right"
+                    x-text="'₹' + formatAmount(t.amount)"
+                  ></td>
+                  <td>
+                    <span
+                      class="cat-tag"
+                      :class="'cat-' + (t.category || 'UNCLASSIFIED')"
+                      x-text="t.category"
+                    ></span>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="drawerData.included.length === 0">
+                <td
+                  colspan="4"
+                  class="text-muted text-sm"
+                  style="padding: 16px"
+                >
+                  None
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div
+            class="section-title"
+            x-text="'Excluded Transactions (' + drawerData.excluded.length + ')'"
+          ></div>
+          <table>
+            <tbody>
+              <template x-for="t in drawerData.excluded" :key="'exc-' + t.id">
+                <tr style="opacity: 0.65">
+                  <td style="white-space: nowrap" x-text="t.date"></td>
+                  <td x-text="t.description"></td>
+                  <td
+                    class="text-right amount-neutral"
+                    x-text="'₹' + formatAmount(t.amount)"
+                  ></td>
+                  <td
+                    class="text-muted text-xs"
+                    x-text="t.exclusion_reason"
+                  ></td>
+                </tr>
+              </template>
+              <tr x-show="drawerData.excluded.length === 0">
+                <td
+                  colspan="4"
+                  class="text-muted text-sm"
+                  style="padding: 16px"
+                >
+                  None
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </div>
+  </div>
+  <!-- end drawer -->
 </div>
+<!-- end analysisPage -->
 
 <script>
-function analysisPage() {
+  function analysisPage() {
     return {
-        loading: true,
-        accounts: [],
-        selectedAccountId: null,
-        accountCount: 0,
-        documentCount: 0,
-        transactionCount: 0,
-        duplicateCount: 0,
-        documents: [],
-        summary: {},
-        coverageGrid: {},
-        balanceTrend: { by_month: {}, min_balance: null },
-        evalResult: null,
+      loading: true,
+      accounts: [],
+      selectedAccountId: null,
+      accountCount: 0,
+      documentCount: 0,
+      transactionCount: 0,
+      duplicateCount: 0,
+      documents: [],
+      summary: {},
+      coverageGrid: {},
+      balanceTrend: { by_month: {}, min_balance: null },
+      evalResult: null,
 
-        drawerOpen: false,
-        drawerLoading: false,
-        drawerTitle: '',
-        drawerData: null,
+      drawerOpen: false,
+      drawerLoading: false,
+      drawerTitle: "",
+      drawerSubtitle: "",
+      drawerData: null,
 
-        metricCardList: [
-            { key: 'monthly_credits_gross', label: 'Monthly Credits (Gross)' },
-            { key: 'monthly_credits_adjusted', label: 'Monthly Credits (Adjusted)' },
-            { key: 'monthly_debits_adjusted', label: 'Monthly Debits (Adjusted)' },
-            { key: 'income', label: 'Estimated Income' },
-            { key: 'recurring_obligations', label: 'Recurring Obligations' },
-            { key: 'net_cashflow', label: 'Net Cash Flow' },
-        ],
-
-        get creditsByMonth() { return (this.summary.monthly_credits_gross && this.summary.monthly_credits_gross.by_month) || {}; },
-        get debitsByMonth() { return (this.summary.monthly_debits_adjusted && this.summary.monthly_debits_adjusted.by_month) || {}; },
-        get chartMonths() {
-            const months = new Set([...Object.keys(this.creditsByMonth), ...Object.keys(this.debitsByMonth)]);
-            return Array.from(months).sort();
+      metricCardList: [
+        {
+          key: "monthly_credits_gross",
+          label: "Gross Monthly Inflows",
+          hint: "All credits before adjustments",
+          color: "green",
         },
-        get balanceMonths() { return Object.keys(this.balanceTrend.by_month || {}).sort(); },
-
-        async loadData() {
-            this.loading = true;
-            try {
-                const docsRes = await fetch('/api/documents/');
-                this.documents = await docsRes.json();
-                this.documentCount = this.documents.length;
-
-                const accRes = await fetch('/api/accounts');
-                this.accounts = await accRes.json();
-                this.accountCount = this.accounts.length;
-
-                const txnRes = await fetch('/api/transactions/');
-                const transactions = await txnRes.json();
-                this.transactionCount = transactions.length;
-                this.duplicateCount = transactions.filter(t => t.duplicate_of).length;
-
-                if (this.accounts.length > 0) {
-                    this.selectedAccountId = this.accounts[0].id;
-                    await this.loadAccountData();
-                }
-
-                const evalRes = await fetch('/api/eval');
-                this.evalResult = await evalRes.json();
-            } finally {
-                this.loading = false;
-            }
+        {
+          key: "monthly_credits_adjusted",
+          label: "Adjusted Monthly Inflows",
+          hint: "Excl. transfers, loan disbursals & refunds",
+          color: "teal",
         },
-
-        async loadAccountData() {
-            if (!this.selectedAccountId) return;
-            const [summaryRes, coverageRes, trendRes] = await Promise.all([
-                fetch(`/api/metrics/account/${this.selectedAccountId}/summary`),
-                fetch(`/api/statements/account/${this.selectedAccountId}/coverage`),
-                fetch(`/api/metrics/account/${this.selectedAccountId}/balance-trend`),
-            ]);
-            this.summary = await summaryRes.json();
-            const coverage = await coverageRes.json();
-            this.coverageGrid = coverage.coverage_grid;
-            this.balanceTrend = await trendRes.json();
+        {
+          key: "monthly_debits_adjusted",
+          label: "Adjusted Monthly Outflows",
+          hint: "Regular expenses only",
+          color: "red",
         },
-
-        async refreshData() {
-            this.loading = true;
-            await this.loadData();
+        {
+          key: "income",
+          label: "Est. Monthly Income",
+          hint: "Salary + verified business receipts",
+          color: "blue",
         },
-
-        async resetDatabase() {
-            if (!confirm('Are you sure? All data will be deleted.')) return;
-            await fetch('/api/reset', { method: 'POST' });
-            this.documents = [];
-            this.accounts = [];
-            this.accountCount = 0;
-            this.documentCount = 0;
-            this.transactionCount = 0;
-            this.summary = {};
-            this.coverageGrid = {};
+        {
+          key: "recurring_obligations",
+          label: "Fixed Monthly Obligations",
+          hint: "EMIs, rent, standing utilities",
+          color: "amber",
         },
-
-        async openDrawer(metricKey) {
-            this.drawerOpen = true;
-            this.drawerLoading = true;
-            this.drawerTitle = this.metricCardList.find(m => m.key === metricKey).label;
-            try {
-                const res = await fetch(`/api/metrics/account/${this.selectedAccountId}/detail/${metricKey}`);
-                this.drawerData = await res.json();
-            } finally {
-                this.drawerLoading = false;
-            }
+        {
+          key: "net_cashflow",
+          label: "Net Monthly Surplus / Deficit",
+          hint: "Adjusted inflows minus obligations",
+          color: "dynamic",
         },
+      ],
 
-        formatValue(key) {
-            const m = this.summary[key];
-            if (!m || m.value === null || m.value === undefined) return '—';
-            return '₹' + this.formatAmount(m.value);
-        },
+      get creditsByMonth() {
+        return (
+          (this.summary.monthly_credits_gross &&
+            this.summary.monthly_credits_gross.by_month) ||
+          {}
+        );
+      },
+      get debitsByMonth() {
+        return (
+          (this.summary.monthly_debits_adjusted &&
+            this.summary.monthly_debits_adjusted.by_month) ||
+          {}
+        );
+      },
+      get chartMonths() {
+        const months = new Set([
+          ...Object.keys(this.creditsByMonth),
+          ...Object.keys(this.debitsByMonth),
+        ]);
+        return Array.from(months).sort();
+      },
+      get balanceMonths() {
+        return Object.keys(this.balanceTrend.by_month || {}).sort();
+      },
 
-        formatAmount(amount) {
-            if (amount === null || amount === undefined) return '0.00';
-            return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        },
+      async loadData() {
+        this.loading = true;
+        try {
+          const [docsRes, accRes, evalRes] = await Promise.all([
+            fetch("/api/documents/"),
+            fetch("/api/accounts"),
+            fetch("/api/eval"),
+          ]);
+          this.documents = await docsRes.json();
+          this.documentCount = this.documents.length;
+          this.accounts = await accRes.json();
+          this.accountCount = this.accounts.length;
+          this.evalResult = await evalRes.json();
 
-        formatPct(value) {
-            if (value === null || value === undefined) return '—';
-            return (value * 100).toFixed(1) + '%';
-        },
+          if (this.accounts.length > 0) {
+            this.selectedAccountId = this.accounts[0].id;
+            await this.loadAccountData();
+          }
 
-        barHeight(value) {
-            const all = [...Object.values(this.creditsByMonth), ...Object.values(this.debitsByMonth)];
-            const max = Math.max(...all, 1);
-            return Math.max(((value || 0) / max) * 120, 2);
-        },
+          /* Load transaction count separately — large dataset, non-blocking */
+          fetch("/api/transactions/count").then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) { this.transactionCount = d.total; this.duplicateCount = d.duplicates; } })
+            .catch(() => {});
+        } finally {
+          this.loading = false;
+        }
+      },
 
-        balanceY(value) {
-            const values = Object.values(this.balanceTrend.by_month || {});
-            const min = Math.min(...values, 0);
-            const max = Math.max(...values, 1);
-            const range = max - min || 1;
-            return 120 - ((value - min) / range) * 100;
-        },
+      async loadAccountData() {
+        if (!this.selectedAccountId) return;
+        const [summaryRes, coverageRes, trendRes] = await Promise.all([
+          fetch(`/api/metrics/account/${this.selectedAccountId}/summary`),
+          fetch(`/api/statements/account/${this.selectedAccountId}/coverage`),
+          fetch(`/api/metrics/account/${this.selectedAccountId}/balance-trend`),
+        ]);
+        this.summary = await summaryRes.json();
+        const coverage = await coverageRes.json();
+        this.coverageGrid = coverage.coverage_grid;
+        if (trendRes.ok) {
+          try { this.balanceTrend = await trendRes.json(); } catch(e) {}
+        }
+      },
 
-        get balancePolylinePoints() {
-            return this.balanceMonths
-                .map((month, idx) => `${idx * 80 + 40},${this.balanceY(this.balanceTrend.by_month[month])}`)
-                .join(' ');
-        },
-    }
-}
+      async refreshData() {
+        this.loading = true;
+        await this.loadData();
+      },
+
+      async resetDatabase() {
+        if (
+          !confirm(
+            "This will permanently delete all accounts, documents and transactions. Proceed?",
+          )
+        )
+          return;
+        await fetch("/api/reset", { method: "POST" });
+        this.documents = [];
+        this.accounts = [];
+        this.accountCount = 0;
+        this.documentCount = 0;
+        this.transactionCount = 0;
+        this.summary = {};
+        this.coverageGrid = {};
+      },
+
+      async openDrawer(metricKey) {
+        const m = this.metricCardList.find((m) => m.key === metricKey);
+        this.drawerOpen = true;
+        this.drawerLoading = true;
+        this.drawerTitle = m.label;
+        this.drawerSubtitle = m.hint;
+        try {
+          const res = await fetch(
+            `/api/metrics/account/${this.selectedAccountId}/detail/${metricKey}`,
+          );
+          this.drawerData = await res.json();
+        } finally {
+          this.drawerLoading = false;
+        }
+      },
+
+      getCardColorClass(m) {
+        if (m.color !== "dynamic") return m.color;
+        const v = this.summary[m.key] && this.summary[m.key].value;
+        if (v === null || v === undefined) return "blue";
+        return v >= 0 ? "dynamic-pos" : "dynamic-neg";
+      },
+
+      getValueColorClass(m) {
+        if (m.color === "green" || m.color === "teal") return "green";
+        if (m.color === "red") return "red";
+        if (m.color === "dynamic") {
+          const v = this.summary[m.key] && this.summary[m.key].value;
+          if (v === null || v === undefined) return "";
+          return v >= 0 ? "green" : "red";
+        }
+        return "";
+      },
+
+      formatValue(key) {
+        const m = this.summary[key];
+        if (!m || m.value === null || m.value === undefined) return "—";
+        return "₹" + this.formatAmount(m.value);
+      },
+
+      formatAmount(amount) {
+        if (amount === null || amount === undefined) return "0.00";
+        return Math.abs(parseFloat(amount))
+          .toFixed(2)
+          .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      },
+
+      formatPct(value) {
+        if (value === null || value === undefined) return "—";
+        return (value * 100).toFixed(1) + "%";
+      },
+
+      barHeight(value) {
+        const all = [
+          ...Object.values(this.creditsByMonth),
+          ...Object.values(this.debitsByMonth),
+        ];
+        const max = Math.max(...all, 1);
+        return Math.max(((value || 0) / max) * 120, 2);
+      },
+
+      balanceY(value) {
+        const values = Object.values(this.balanceTrend.by_month || {});
+        const min = Math.min(...values, 0);
+        const max = Math.max(...values, 1);
+        const range = max - min || 1;
+        return 120 - ((value - min) / range) * 100;
+      },
+
+      get balancePolylinePoints() {
+        return this.balanceMonths
+          .map(
+            (month, idx) =>
+              `${idx * 80 + 40},${this.balanceY(this.balanceTrend.by_month[month])}`,
+          )
+          .join(" ");
+      },
+    };
+  }
 </script>
 {% endblock %}

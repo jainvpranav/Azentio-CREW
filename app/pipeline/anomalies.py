@@ -464,7 +464,7 @@ def check_expense_anomalies(session: Session, account_id: int) -> dict:
         by_subcat[cls.subcategory or cls.category.value].append(t)
     large_purchases = []
     for subcat, group in by_subcat.items():
-        amounts = sorted(t.debit for t in group)
+        amounts = sorted(t.debit for t in group if t.debit is not None)
         if len(amounts) < cfg.MIN_HISTORY_MONTHS_FOR_DEVIATION + 1:
             continue
         med = amounts[len(amounts) // 2]

@@ -1,105 +1,196 @@
 {% extends "base.html" %}
 
-{% block title %}Review - Bank Statement Analyzer{% endblock %}
+{% block title %}Review Queue — Credit Analyst{% endblock %}
 
 {% block content %}
-<div x-data="reviewPage()" x-init="loadData()" class="card">
-    <h2>Review</h2>
-    <p class="text-muted" style="margin-bottom: 15px;">Flags are observations for an analyst to check &mdash; not accusations.</p>
+<div x-data="reviewPage()" x-init="loadData()">
 
-    <div x-show="loading" class="alert alert-success" style="text-align: center;">
-        <span class="loading"></span> Loading...
+    <!-- Page header -->
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+        <div>
+            <h2 style="font-size:22px; font-weight:700; color:var(--gray-900); margin-bottom:4px;">Review Queue</h2>
+            <p class="text-sm text-muted">Rule-generated observations for analyst review. Flags are not accusations — each requires human judgement.</p>
+        </div>
+        <button @click="regenerateFlags()" class="secondary">&#8635; Re-run Checks</button>
+    </div>
+
+    <div x-show="loading" class="alert alert-info" style="text-align:center;">
+        <span class="loading"></span>&nbsp; Loading…
     </div>
 
     <div x-show="!loading">
-        <!-- Flags Queue -->
-        <div class="flex gap-2" style="margin-bottom: 15px; align-items: center;">
-            <h3 style="flex: 1;">Flags Queue (<span x-text="flagTotal"></span>)</h3>
-            <button @click="regenerateFlags()" class="secondary">Re-run checks</button>
+
+        <!-- ── Flags Queue ─────────────────────────────── -->
+        <div class="flex justify-between items-center" style="margin-bottom:12px;">
+            <h3 style="font-size:15px; font-weight:600;">
+                Flagged Items
+                <span style="margin-left:6px; font-size:13px; font-weight:400; color:var(--gray-500);" x-text="'(' + flagTotal + ' total)'"></span>
+            </h3>
         </div>
 
         <template x-if="flagTotal === 0">
-            <p style="text-align: center; color: #999; padding: 20px;">No flags. Nothing needs review.</p>
+            <div class="alert alert-success">
+                <strong>Queue is clear</strong> — no items require analyst review at this time.
+            </div>
         </template>
 
-        <template x-for="severity in ['high', 'warn', 'info']" :key="severity">
-            <div x-show="flags[severity] && flags[severity].length > 0" style="margin-bottom: 15px;">
-                <div
-                    style="font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px;"
-                    :style="severity === 'high' ? 'color: #991b1b' : severity === 'warn' ? 'color: #92400e' : 'color: #374151'"
-                    x-text="severity + ' severity'"
-                ></div>
-                <template x-for="flag in flags[severity]" :key="flag.id">
-                    <div
-                        class="alert"
-                        :class="severity === 'high' ? 'alert-error' : severity === 'warn' ? 'alert-warning' : 'alert-success'"
-                        style="display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;"
-                    >
-                        <div>
-                            <strong x-text="flag.type"></strong>
-                            <div x-text="flag.message"></div>
-                            <small
-                                x-show="flag.context && flag.context.description"
-                                style="opacity: 0.8;"
-                                x-text="flag.context.txn_date + ' — ' + flag.context.description + ' (₹' + formatAmount(flag.context.amount) + ')'"
-                            ></small>
-                            <small
-                                x-show="flag.context && flag.context.period_start"
-                                style="opacity: 0.8;"
-                                x-text="'Statement ' + flag.context.period_start + ' to ' + flag.context.period_end"
-                            ></small>
+        <!-- High severity -->
+        <template x-if="flags.high && flags.high.length > 0">
+            <div style="margin-bottom:18px;">
+                <div class="section-title" style="color:var(--red); border-color:var(--red-border);">
+                    &#9888; High Severity &mdash; <span x-text="flags.high.length"></span> item<span x-show="flags.high.length > 1">s</span>
+                </div>
+                <template x-for="flag in flags.high" :key="flag.id">
+                    <div class="flag-card flag-high">
+                        <div class="flex justify-between gap-2 flex-wrap">
+                            <div style="flex:1;">
+                                <div class="flex gap-2 items-center" style="margin-bottom:5px;">
+                                    <span class="badge badge-fail" style="font-size:10px;">High</span>
+                                    <strong style="font-size:13px;" x-text="friendlyFlagType(flag.type)"></strong>
+                                </div>
+                                <p style="font-size:13px; margin-bottom:4px;" x-text="flag.message"></p>
+                                <p class="text-xs text-muted"
+                                   x-show="flag.context && flag.context.description"
+                                   x-text="flag.context.txn_date + ' — ' + flag.context.description + ' (₹' + formatAmount(flag.context.amount) + ')'">
+                                </p>
+                                <p class="text-xs text-muted"
+                                   x-show="flag.context && flag.context.period_start"
+                                   x-text="'Statement period: ' + flag.context.period_start + ' to ' + flag.context.period_end">
+                                </p>
+                            </div>
+                            <a x-show="flag.txn_id" href="/transactions"
+                               style="white-space:nowrap; font-size:12px; color:var(--primary-mid); font-weight:600; text-decoration:none; align-self:flex-start;">
+                                View transaction &rsaquo;
+                            </a>
                         </div>
-                        <a x-show="flag.txn_id" :href="'/transactions'" style="white-space: nowrap;">View txn &rarr;</a>
                     </div>
                 </template>
             </div>
         </template>
-    </div>
 
-    <!-- Classification Audit Trail -->
-    <div style="margin-top: 30px;">
-        <h3 style="margin-bottom: 10px;">Classification Audit Trail</h3>
-        <p class="text-muted text-sm" style="margin-bottom: 10px;">
-            Corrections are append-only: the original rule-based classification stays visible alongside the current one.
+        <!-- Warn severity -->
+        <template x-if="flags.warn && flags.warn.length > 0">
+            <div style="margin-bottom:18px;">
+                <div class="section-title" style="color:var(--amber); border-color:var(--amber-border);">
+                    &#9888; Caution — <span x-text="flags.warn.length"></span> item<span x-show="flags.warn.length > 1">s</span>
+                </div>
+                <template x-for="flag in flags.warn" :key="flag.id">
+                    <div class="flag-card flag-warn">
+                        <div class="flex justify-between gap-2 flex-wrap">
+                            <div style="flex:1;">
+                                <div class="flex gap-2 items-center" style="margin-bottom:5px;">
+                                    <span class="badge badge-marginal" style="font-size:10px;">Caution</span>
+                                    <strong style="font-size:13px;" x-text="friendlyFlagType(flag.type)"></strong>
+                                </div>
+                                <p style="font-size:13px; margin-bottom:4px;" x-text="flag.message"></p>
+                                <p class="text-xs text-muted"
+                                   x-show="flag.context && flag.context.description"
+                                   x-text="flag.context.txn_date + ' — ' + flag.context.description + ' (₹' + formatAmount(flag.context.amount) + ')'">
+                                </p>
+                                <p class="text-xs text-muted"
+                                   x-show="flag.context && flag.context.period_start"
+                                   x-text="'Statement period: ' + flag.context.period_start + ' to ' + flag.context.period_end">
+                                </p>
+                            </div>
+                            <a x-show="flag.txn_id" href="/transactions"
+                               style="white-space:nowrap; font-size:12px; color:var(--primary-mid); font-weight:600; text-decoration:none; align-self:flex-start;">
+                                View transaction &rsaquo;
+                            </a>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <!-- Info severity -->
+        <template x-if="flags.info && flags.info.length > 0">
+            <div style="margin-bottom:18px;">
+                <div class="section-title">
+                    &#9432; Informational — <span x-text="flags.info.length"></span> item<span x-show="flags.info.length > 1">s</span>
+                </div>
+                <template x-for="flag in flags.info" :key="flag.id">
+                    <div class="flag-card flag-info">
+                        <div class="flex justify-between gap-2 flex-wrap">
+                            <div style="flex:1;">
+                                <div class="flex gap-2 items-center" style="margin-bottom:5px;">
+                                    <span class="badge badge-computed" style="font-size:10px;">Info</span>
+                                    <strong style="font-size:13px;" x-text="friendlyFlagType(flag.type)"></strong>
+                                </div>
+                                <p style="font-size:13px; margin-bottom:4px;" x-text="flag.message"></p>
+                                <p class="text-xs text-muted"
+                                   x-show="flag.context && flag.context.description"
+                                   x-text="flag.context.txn_date + ' — ' + flag.context.description + ' (₹' + formatAmount(flag.context.amount) + ')'">
+                                </p>
+                            </div>
+                            <a x-show="flag.txn_id" href="/transactions"
+                               style="white-space:nowrap; font-size:12px; color:var(--primary-mid); font-weight:600; text-decoration:none; align-self:flex-start;">
+                                View transaction &rsaquo;
+                            </a>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <!-- ── Classification Audit Trail ──────────────── -->
+        <div class="section-title" style="margin-top:30px;">Classification Audit Trail</div>
+        <p class="text-xs text-muted" style="margin:-8px 0 14px;">
+            Corrections are append-only. The original rule-based label stays visible alongside the current analyst-assigned label.
         </p>
 
         <template x-if="!loading && corrections.length === 0">
-            <p style="text-align: center; color: #999; padding: 20px;">No corrections have been made yet.</p>
+            <p style="text-align:center; color:var(--gray-400); padding:20px 0; font-size:13px;">
+                No reclassifications have been made yet.
+            </p>
         </template>
 
-        <table x-show="corrections.length > 0">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Original</th>
-                    <th>Current</th>
-                    <th>Why</th>
-                    <th>When</th>
-                </tr>
-            </thead>
-            <tbody>
-                <template x-for="c in corrections" :key="c.txn_id">
+        <div class="card" style="padding:0; overflow:hidden;" x-show="corrections.length > 0">
+            <table>
+                <thead>
                     <tr>
-                        <td x-text="c.txn_date"></td>
-                        <td x-text="c.description"></td>
-                        <td>
-                            <span style="font-size: 11px; padding: 4px 8px; border-radius: 3px; background: #f0f0f0;" x-text="c.history[0].category"></span>
-                            <br><small class="text-muted" x-text="c.history[0].reason"></small>
-                        </td>
-                        <td>
-                            <span style="font-size: 11px; padding: 4px 8px; border-radius: 3px; background: #dcfce7;" x-text="c.history[c.history.length - 1].category"></span>
-                        </td>
-                        <td x-text="c.history[c.history.length - 1].user_note || c.history[c.history.length - 1].reason"></td>
-                        <td><small x-text="formatDate(c.history[c.history.length - 1].created_at)"></small></td>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Original Label</th>
+                        <th>Current Label</th>
+                        <th>Analyst Note</th>
+                        <th>Changed</th>
                     </tr>
-                </template>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    <template x-for="c in corrections" :key="c.txn_id">
+                        <tr>
+                            <td style="white-space:nowrap; font-size:12px;" x-text="c.txn_date"></td>
+                            <td style="font-size:12px;" x-text="c.description"></td>
+                            <td>
+                                <span class="cat-tag" :class="'cat-' + c.history[0].category" x-text="c.history[0].category"></span>
+                                <br><span class="text-xs text-muted" x-text="c.history[0].reason"></span>
+                            </td>
+                            <td>
+                                <span class="cat-tag" :class="'cat-' + c.history[c.history.length - 1].category"
+                                      x-text="c.history[c.history.length - 1].category"></span>
+                            </td>
+                            <td class="text-sm" x-text="c.history[c.history.length - 1].user_note || c.history[c.history.length - 1].reason"></td>
+                            <td class="text-xs text-muted" x-text="formatDate(c.history[c.history.length - 1].created_at)"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <script>
+const FLAG_LABELS = {
+    NSF_BOUNCE:             'Insufficient Funds / Bounce',
+    ROUND_TRIPPING:         'Possible Round-Tripping',
+    EOD_BALANCE_STRESS:     'Sustained Low End-of-Day Balance',
+    LARGE_CASH_WITHDRAWAL:  'Large Cash Withdrawal',
+    IRREGULAR_CREDIT:       'Irregular / One-Off Credit',
+    HIGH_FOIR:              'High Fixed Obligation Ratio',
+    LOW_NAMB:               'Low Average Monthly Balance',
+    CONCENTRATION_RISK:     'Customer Concentration Risk',
+};
+
 function reviewPage() {
     return {
         loading: true,
@@ -131,6 +222,10 @@ function reviewPage() {
             await this.loadFlags();
         },
 
+        friendlyFlagType(type) {
+            return FLAG_LABELS[type] || (type || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        },
+
         formatAmount(amount) {
             if (!amount) return '0.00';
             return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -138,7 +233,7 @@ function reviewPage() {
 
         formatDate(iso) {
             if (!iso) return '';
-            return new Date(iso).toLocaleString();
+            return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
         },
     }
 }
