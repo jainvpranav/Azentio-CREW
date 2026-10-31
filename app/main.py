@@ -67,6 +67,23 @@ def reset_database(session = Depends(get_session)):
     return {"message": "Database reset"}
 
 
+@app.get("/api/eval")
+def eval_accuracy(session = Depends(get_session)):
+    """
+    Classification accuracy vs data_gen/output/ground_truth.json, if present
+    (BUILD_PLAN.md section 7/8). Returns None accuracy when no ground truth
+    file exists, e.g. in a real deployment with no synthetic demo data.
+    """
+    from eval.score import compute_score, load_ground_truth
+
+    try:
+        ground_truth = load_ground_truth()
+    except FileNotFoundError:
+        return {"accuracy": None, "message": "No ground_truth.json found. Run data_gen/generate.py first."}
+
+    return compute_score(session, ground_truth)
+
+
 # ===================== HTML Pages =====================
 
 @app.get("/", response_class=HTMLResponse)

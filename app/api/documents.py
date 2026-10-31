@@ -10,8 +10,7 @@ import tempfile
 
 from app.db import get_session
 from app.models import Document, DocumentStatus, DocumentResponse, Account, Statement, Transaction
-from app.ingest.pdf_parser import parse_pdf
-from app.ingest.structured_parser import parse_csv, parse_excel
+from app.ingest.router import parse_statement
 
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -23,18 +22,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def calculate_sha256(file_bytes: bytes) -> str:
     """Calculate SHA256 hash of file"""
     return hashlib.sha256(file_bytes).hexdigest()
-
-
-def parse_statement(file_path: str, file_type: str):
-    """Dispatch to appropriate parser based on file type"""
-    if file_type == "pdf":
-        return parse_pdf(file_path)
-    elif file_type == "csv":
-        return parse_csv(file_path)
-    elif file_type in ["xlsx", "xls"]:
-        return parse_excel(file_path)
-    else:
-        raise ValueError(f"Unsupported file type: {file_type}")
 
 
 @router.post("/upload")
@@ -60,6 +47,8 @@ async def upload_documents(
                 file_type = "csv"
             elif file_ext in ["xlsx", "xls"]:
                 file_type = "xlsx"
+            elif file_ext == "json":
+                file_type = "json"
             else:
                 results.append({
                     "filename": file_name,

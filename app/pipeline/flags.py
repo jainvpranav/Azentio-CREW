@@ -73,56 +73,68 @@ def check_duplicates(session: Session) -> dict:
 
 
 def check_large_cash_deposits(session: Session) -> dict:
-    """Flag unusually large cash deposits"""
-    # Get all cash deposits
-    cash_deposits = session.exec(
-        select(Transaction)
-        .where(Transaction.credit != None)
-    ).all()
+    """Flag cash deposits > 2x the account's median monthly income, or > Rs.2L"""
+    from app.pipeline.metrics import compute_metric_detail
 
-    # Filter for cash deposits
-    cash_txns = []
-    for txn in cash_deposits:
-        if "CASH" in txn.description.upper() or "CDM" in txn.description.upper():
-            cash_txns.append(txn)
-
+    accounts = session.exec(select(Account)).all()
     count = 0
-    for txn in cash_txns:
-        # Flag if > 2L or unusual
-        if txn.credit > Decimal("200000"):
-            create_flag(
-                session,
-                "LARGE_CASH_DEPOSIT",
-                FlagSeverity.WARN,
-                f"Large cash deposit: ₹{txn.credit}. Requires review.",
-                txn_id=txn.id,
-                evidence=[txn.id]
-            )
-            count += 1
+    for account in accounts:
+        income = compute_metric_detail(session, account.id, "income")
+        median_income = Decimal(str(income["value"])) if income["value"] else None
+
+        txns = session.exec(
+            select(Transaction)
+            .where(Transaction.account_id == account.id)
+            .where(Transaction.credit != None)
+        ).all()
+        for txn in txns:
+            if "CASH" not in txn.description.upper() and "CDM" not in txn.description.upper():
+                continue
+            if txn.credit > Decimal("200000") or (median_income and txn.credit > median_income * 2):
+                create_flag(
+                    session,
+                    "LARGE_CASH_DEPOSIT",
+                    FlagSeverity.WARN,
+                    f"Large cash deposit: ₹{txn.credit}. Requires review.",
+                    txn_id=txn.id,
+                    evidence=[txn.id]
+                )
+                count += 1
 
     session.commit()
     return {"flags_created": count, "type": "LARGE_CASH_DEPOSIT"}
 
 
 def check_round_figures(session: Session) -> dict:
-    """Flag round-figure credits (potential transfers)"""
-    transactions = session.exec(
-        select(Transaction).where(Transaction.credit != None)
-    ).all()
+    """Flag round-figure (multiple of 10,000) credits in the last 30 days of an account's coverage"""
+    from datetime import timedelta
 
+    accounts = session.exec(select(Account)).all()
     count = 0
-    for txn in transactions:
-        # Check if amount is multiple of 10,000
-        if txn.credit % Decimal("10000") == 0 and txn.credit > Decimal("10000"):
-            create_flag(
-                session,
-                "ROUND_FIGURE_SPIKE",
-                FlagSeverity.WARN,
-                f"Round figure credit: ₹{txn.credit}. May need review.",
-                txn_id=txn.id,
-                evidence=[txn.id]
-            )
-            count += 1
+    for account in accounts:
+        txns = session.exec(
+            select(Transaction)
+            .where(Transaction.account_id == account.id)
+            .where(Transaction.credit != None)
+        ).all()
+        if not txns:
+            continue
+        max_date = max(t.txn_date for t in txns)
+        window_start = max_date - timedelta(days=30)
+
+        for txn in txns:
+            if txn.txn_date < window_start:
+                continue
+            if txn.credit % Decimal("10000") == 0 and txn.credit > Decimal("10000"):
+                create_flag(
+                    session,
+                    "ROUND_FIGURE_SPIKE",
+                    FlagSeverity.WARN,
+                    f"Round figure credit: ₹{txn.credit}. May need review.",
+                    txn_id=txn.id,
+                    evidence=[txn.id]
+                )
+                count += 1
 
     session.commit()
     return {"flags_created": count, "type": "ROUND_FIGURE_SPIKE"}

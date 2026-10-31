@@ -55,13 +55,17 @@ def dedupe_all(session: Session = Depends(get_session)):
 @router.post("/process-all")
 def process_all_documents(session: Session = Depends(get_session)):
     """
-    Run full preprocessing pipeline:
+    Run the full post-upload pipeline:
     1. Deduplicate all accounts
     2. Reconcile all statements
     3. Get coverage for all accounts
+    4. Classify all transactions (rules + pairing)
+    5. Generate review flags
     """
     from app.models import Statement
     from sqlmodel import select
+    from app.pipeline.classify import classify_all_transactions
+    from app.pipeline.flags import generate_all_flags
 
     # 1. Deduplicate
     dedupe_result = deduplicate_all(session)
@@ -76,6 +80,12 @@ def process_all_documents(session: Session = Depends(get_session)):
     # 3. Get coverage
     coverage_result = get_all_coverage(session)
 
+    # 4. Classify (depends on dedupe having run, for duplicate exclusion downstream)
+    classify_result = classify_all_transactions(session)
+
+    # 5. Flags (depends on reconcile + classify having run)
+    flags_result = generate_all_flags(session)
+
     return {
         "dedupe": dedupe_result,
         "reconcile": {
@@ -83,6 +93,8 @@ def process_all_documents(session: Session = Depends(get_session)):
             "results": reconcile_results,
         },
         "coverage": coverage_result,
+        "classify": classify_result,
+        "flags": flags_result,
     }
 
 

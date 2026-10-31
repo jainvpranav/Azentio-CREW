@@ -1,0 +1,20 @@
+[
+  {
+    "txn_date": "2026-07-03",
+    "narration": "ADDED MONEY VIA UPI",
+    "debit_amt": null,
+    "credit_amt": 5000.0
+  },
+  {
+    "txn_date": "2026-07-08",
+    "narration": "PAID TO METRO SUPPLIES",
+    "debit_amt": 2200.0,
+    "credit_amt": null
+  },
+  {
+    "txn_date": "2026-07-19",
+    "narration": "AIRTEL RECHARGE",
+    "debit_amt": 399.0,
+    "credit_amt": null
+  }
+]

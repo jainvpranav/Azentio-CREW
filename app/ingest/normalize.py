@@ -24,6 +24,7 @@ def normalize_date(value: str, day_first: bool = True) -> date:
         "%d/%m/%y",  # DD/MM/YY
         "%d %b %Y",  # DD MMM YYYY
         "%d %B %Y",  # DD MONTH YYYY
+        "%d-%b-%Y",  # DD-MMM-YYYY
         "%Y-%m-%d",  # ISO
     ]
 

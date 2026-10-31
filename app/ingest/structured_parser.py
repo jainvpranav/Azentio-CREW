@@ -1,4 +1,5 @@
 """CSV, Excel, and JSON statement parser using pandas"""
+import json
 import pandas as pd
 from decimal import Decimal
 from datetime import date
@@ -45,60 +46,6 @@ def find_columns(df: pd.DataFrame) -> dict:
     return columns
 
 
-def parse_csv(file_path: str) -> ParsedStatement:
-    """Parse CSV statement"""
-    statement = ParsedStatement()
-
-    try:
-        df = pd.read_csv(file_path)
-        statement.pages_total = 1
-
-        if df.empty:
-            statement.errors.append(PDFParseError(1, "empty_file"))
-            return statement
-
-        columns = find_columns(df)
-
-        if not columns['date'] or not columns['description']:
-            statement.errors.append(PDFParseError(1, "missing_required_columns"))
-            return statement
-
-        # Parse rows
-        for idx, row in df.iterrows():
-            try:
-                txn_date = normalize_date(row[columns['date']])
-                description = clean_description(row[columns['description']])
-                debit = normalize_amount(row[columns['debit']]) if columns['debit'] else None
-                credit = normalize_amount(row[columns['credit']]) if columns['credit'] else None
-                balance = normalize_amount(row[columns['balance']]) if columns['balance'] else None
-
-                if not any([debit, credit]):
-                    continue  # Skip rows with no amount
-
-                txn = ParsedTransaction(
-                    txn_date=txn_date,
-                    description=description,
-                    debit=debit,
-                    credit=credit,
-                    balance=balance,
-                    raw_text=str(row.to_dict()),
-                    page=1,
-                    row_index=idx + 1,
-                )
-                statement.transactions.append(txn)
-
-            except (ValueError, KeyError) as e:
-                continue  # Skip malformed rows
-
-        statement.pages_parsed = 1 if statement.transactions else 0
-        _infer_opening_closing(statement)
-
-    except Exception as e:
-        statement.errors.append(PDFParseError(1, f"csv_read_error: {str(e)}"))
-
-    return statement
-
-
 def _infer_opening_closing(statement: ParsedStatement) -> None:
     """
     Derive opening/closing balance from the statement's own running balance
@@ -114,56 +61,88 @@ def _infer_opening_closing(statement: ParsedStatement) -> None:
     statement.closing_balance = txns[-1].balance
 
 
+def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement) -> None:
+    """Shared row-extraction logic for CSV/Excel/JSON (all become a DataFrame)."""
+    statement.pages_total = 1
+
+    if df.empty:
+        statement.errors.append(PDFParseError(1, "empty_file"))
+        return
+
+    columns = find_columns(df)
+    if not columns['date'] or not columns['description']:
+        statement.errors.append(PDFParseError(1, "missing_required_columns"))
+        return
+
+    for idx, row in df.iterrows():
+        try:
+            txn_date = normalize_date(row[columns['date']])
+            description = clean_description(row[columns['description']])
+            debit = normalize_amount(row[columns['debit']]) if columns['debit'] else None
+            credit = normalize_amount(row[columns['credit']]) if columns['credit'] else None
+            balance = normalize_amount(row[columns['balance']]) if columns['balance'] else None
+
+            if not any([debit, credit]):
+                continue  # Skip rows with no amount
+
+            statement.transactions.append(ParsedTransaction(
+                txn_date=txn_date,
+                description=description,
+                debit=debit,
+                credit=credit,
+                balance=balance,
+                raw_text=str(row.to_dict()),
+                page=1,
+                row_index=idx + 1,
+            ))
+
+        except (ValueError, KeyError):
+            continue  # Skip malformed rows
+
+    statement.pages_parsed = 1 if statement.transactions else 0
+    _infer_opening_closing(statement)
+
+
+def parse_csv(file_path: str) -> ParsedStatement:
+    """Parse CSV statement"""
+    statement = ParsedStatement()
+    try:
+        df = pd.read_csv(file_path)
+        _parse_dataframe(df, statement)
+    except Exception as e:
+        statement.errors.append(PDFParseError(1, f"csv_read_error: {str(e)}"))
+    return statement
+
+
 def parse_excel(file_path: str) -> ParsedStatement:
     """Parse Excel statement (XLSX or XLS)"""
     statement = ParsedStatement()
-
     try:
-        # Try to read first sheet
         df = pd.read_excel(file_path, sheet_name=0)
-        statement.pages_total = 1
-
-        if df.empty:
-            statement.errors.append(PDFParseError(1, "empty_file"))
-            return statement
-
-        columns = find_columns(df)
-
-        if not columns['date'] or not columns['description']:
-            statement.errors.append(PDFParseError(1, "missing_required_columns"))
-            return statement
-
-        # Parse rows
-        for idx, row in df.iterrows():
-            try:
-                txn_date = normalize_date(row[columns['date']])
-                description = clean_description(row[columns['description']])
-                debit = normalize_amount(row[columns['debit']]) if columns['debit'] else None
-                credit = normalize_amount(row[columns['credit']]) if columns['credit'] else None
-                balance = normalize_amount(row[columns['balance']]) if columns['balance'] else None
-
-                if not any([debit, credit]):
-                    continue
-
-                txn = ParsedTransaction(
-                    txn_date=txn_date,
-                    description=description,
-                    debit=debit,
-                    credit=credit,
-                    balance=balance,
-                    raw_text=str(row.to_dict()),
-                    page=1,
-                    row_index=idx + 1,
-                )
-                statement.transactions.append(txn)
-
-            except (ValueError, KeyError) as e:
-                continue
-
-        statement.pages_parsed = 1 if statement.transactions else 0
-        _infer_opening_closing(statement)
-
+        _parse_dataframe(df, statement)
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"excel_read_error: {str(e)}"))
+    return statement
 
+
+def parse_json(file_path: str) -> ParsedStatement:
+    """
+    Parse JSON statement: a JSON array of transaction objects, e.g.
+    [{"date": "...", "narration": "...", "amount": -850.0}, ...]
+    Field names are detected the same fuzzy way as CSV/Excel headers.
+    """
+    statement = ParsedStatement()
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        records = data.get("transactions", data) if isinstance(data, dict) else data
+        if not isinstance(records, list):
+            statement.errors.append(PDFParseError(1, "unrecognized_json_structure"))
+            return statement
+
+        df = pd.json_normalize(records)
+        _parse_dataframe(df, statement)
+    except Exception as e:
+        statement.errors.append(PDFParseError(1, f"json_read_error: {str(e)}"))
     return statement

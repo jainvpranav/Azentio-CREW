@@ -14,6 +14,11 @@
         No accounts yet. <a href="/" style="color: #3b82f6;">Go to Upload &rarr;</a>
     </div>
 
+    <div x-show="!loading && evalResult && evalResult.accuracy !== null" class="alert alert-success" style="margin-bottom: 15px;">
+        Classification accuracy on test set: <strong x-text="formatPct(evalResult && evalResult.accuracy)"></strong>
+        <span class="text-sm" x-text="'(' + (evalResult && evalResult.correct) + '/' + (evalResult && evalResult.total) + ' vs data_gen ground truth)'"></span>
+    </div>
+
     <template x-if="!loading && accounts.length > 0">
         <div>
             <!-- Account selector -->
@@ -243,6 +248,7 @@ function analysisPage() {
         summary: {},
         coverageGrid: {},
         balanceTrend: { by_month: {}, min_balance: null },
+        evalResult: null,
 
         drawerOpen: false,
         drawerLoading: false,
@@ -286,6 +292,9 @@ function analysisPage() {
                     this.selectedAccountId = this.accounts[0].id;
                     await this.loadAccountData();
                 }
+
+                const evalRes = await fetch('/api/eval');
+                this.evalResult = await evalRes.json();
             } finally {
                 this.loading = false;
             }
@@ -342,6 +351,11 @@ function analysisPage() {
         formatAmount(amount) {
             if (amount === null || amount === undefined) return '0.00';
             return parseFloat(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        },
+
+        formatPct(value) {
+            if (value === null || value === undefined) return '—';
+            return (value * 100).toFixed(1) + '%';
         },
 
         barHeight(value) {
