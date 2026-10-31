@@ -18,6 +18,17 @@ def test_find_columns_matches_withdrawal_deposit_headers():
     assert columns["description"] == "Narration"
 
 
+def test_find_columns_does_not_mismatch_description_as_credit():
+    # Regression: "Description" contains the substring "cr" (de-s-cr-iption),
+    # which used to beat the real "Credit" column for the weak 'cr' keyword
+    # since credit_candidates picked the first column-order match.
+    df = pd.DataFrame(columns=["Date", "Description", "Debit", "Credit", "Balance"])
+    columns = find_columns(df)
+    assert columns["credit"] == "Credit"
+    assert columns["debit"] == "Debit"
+    assert columns["description"] == "Description"
+
+
 def test_find_columns_falls_back_to_position_for_description():
     df = pd.DataFrame(columns=["Transaction Date", "Merchant", "Amount Debited", "Amount Credited"])
     columns = find_columns(df)

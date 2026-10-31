@@ -10,14 +10,18 @@ from app.pipeline.pairing import (
     find_salary_clusters,
     find_emi_clusters,
 )
+from app.pipeline.categories import classify_expense_subcategory
+
+INVOICE_KEYWORDS = ["INV", "INVOICE", "BILLNO", "PAYMENTFOR", "PO#", "PONO"]
 
 
 class ClassificationResult:
-    def __init__(self, category: TransactionCategory, rule_id: str, reason: str, confidence: float = 1.0):
+    def __init__(self, category: TransactionCategory, rule_id: str, reason: str, confidence: float = 1.0, subcategory: str = None):
         self.category = category
         self.rule_id = rule_id
         self.reason = reason
         self.confidence = confidence
+        self.subcategory = subcategory
 
 
 def normalize_desc(text: str) -> str:
@@ -128,19 +132,42 @@ def classify_transaction(txn: Transaction, ctx: dict, xfer_pairs: dict) -> Class
     if "INTPD" in desc or "INTEREST" in desc:
         return ClassificationResult(TransactionCategory.INTEREST, "INTEREST", "Interest detected", 0.9)
 
-    # Rule 14: BUSINESS_RECEIPT (remaining credits)
+    # Rule 14: BUSINESS_RECEIPT / POSSIBLE_BUSINESS_RECEIPT (remaining credits)
+    # A new/single-occurrence sender is not inherently suspicious or
+    # confidently business income (handoff: "A new sender is not inherently
+    # suspicious. A recurring credit from an individual does not prove
+    # business income."). Only credits with repeat-counterparty evidence or
+    # an invoice/payment reference are confidently BUSINESS_RECEIPT; a
+    # single unverifiable third-party credit is POSSIBLE_BUSINESS_RECEIPT,
+    # never silently upgraded to income.
     if is_credit:
         if "UPI" in desc or "NEFT" in desc or "IMPS" in desc or "RTGS" in desc:
+            counterparty_key = (txn.counterparty or desc).upper()
+            recurrence = ctx.get("credit_counterparty_counts", {}).get(counterparty_key, 1)
+            has_invoice_ref = any(kw in desc for kw in INVOICE_KEYWORDS)
+            if recurrence >= 2 or has_invoice_ref:
+                reason = (
+                    f"Repeat counterparty ({recurrence} credits observed)" if recurrence >= 2
+                    else "Invoice/payment reference present"
+                )
+                return ClassificationResult(
+                    TransactionCategory.BUSINESS_RECEIPT,
+                    "BIZ_RECEIPT",
+                    f"Third-party credit via payment gateway; {reason}",
+                    0.8,
+                )
             return ClassificationResult(
-                TransactionCategory.BUSINESS_RECEIPT,
-                "BIZ_RECEIPT",
-                "Third-party credit via payment gateway, not salary/transfer/refund",
-                0.8,
+                TransactionCategory.POSSIBLE_BUSINESS_RECEIPT,
+                "BIZ_RECEIPT_UNVERIFIED",
+                "Single third-party credit via payment gateway; new/unverified counterparty, purpose unclear",
+                0.5,
             )
 
     # Rule 15: OTHER_EXPENSE (remaining debits)
     if not is_credit:
-        return ClassificationResult(TransactionCategory.OTHER_EXPENSE, "OTHER_EXP", "Unclassified expense", 0.5)
+        subcategory = classify_expense_subcategory(desc)
+        reason = f"Unclassified expense (subcategory: {subcategory})" if subcategory else "Unclassified expense"
+        return ClassificationResult(TransactionCategory.OTHER_EXPENSE, "OTHER_EXP", reason, 0.5, subcategory=subcategory)
 
     # Default: UNCLASSIFIED
     return ClassificationResult(TransactionCategory.UNCLASSIFIED, "UNCLASSIFIED", "No matching rule", 0.0)
@@ -169,12 +196,19 @@ def classify_all_transactions(session: Session) -> dict:
     for account_id, txns in by_account.items():
         credits = [t for t in txns if t.credit is not None]
         debits = [t for t in txns if t.debit is not None]
+
+        counterparty_counts = defaultdict(int)
+        for t in credits:
+            key = (t.counterparty or normalize_desc(t.description)).upper()
+            counterparty_counts[key] += 1
+
         context_by_account[account_id] = {
             "reversal_pairs": find_reversal_pairs(txns),
             "refund_pairs": find_refund_pairs(txns),
             "salary_clusters": find_salary_clusters(credits),
             "emi_clusters": find_emi_clusters(debits),
             "holder_name": accounts[account_id].holder_name if account_id in accounts else None,
+            "credit_counterparty_counts": dict(counterparty_counts),
         }
 
     counts_by_category = {}
@@ -198,6 +232,7 @@ def classify_all_transactions(session: Session) -> dict:
         classification = Classification(
             txn_id=txn.id,
             category=result.category,
+            subcategory=result.subcategory,
             rule_id=result.rule_id,
             reason=result.reason,
             confidence=result.confidence,

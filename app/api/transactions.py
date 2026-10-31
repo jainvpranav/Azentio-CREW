@@ -112,11 +112,17 @@ def list_transactions(
             credit=txn.credit,
             balance=txn.balance,
             category=classification.category if classification else None,
+            subcategory=classification.subcategory if classification else None,
+            classification_confidence=classification.confidence if classification else None,
             rule_id=classification.rule_id if classification else None,
             reason=classification.reason if classification else None,
             page=txn.page,
             row_index=txn.row_index,
             duplicate_of=txn.duplicate_of,
+            counterparty=txn.counterparty,
+            counterparty_account=txn.counterparty_account,
+            reference_number=txn.reference_number,
+            transaction_type=txn.transaction_type,
         ))
 
     # Filter by category if specified
@@ -147,11 +153,17 @@ def get_transaction(txn_id: int, session: Session = Depends(get_session)):
         credit=txn.credit,
         balance=txn.balance,
         category=classification.category if classification else None,
+        subcategory=classification.subcategory if classification else None,
+        classification_confidence=classification.confidence if classification else None,
         rule_id=classification.rule_id if classification else None,
         reason=classification.reason if classification else None,
         page=txn.page,
         row_index=txn.row_index,
         duplicate_of=txn.duplicate_of,
+        counterparty=txn.counterparty,
+        counterparty_account=txn.counterparty_account,
+        reference_number=txn.reference_number,
+        transaction_type=txn.transaction_type,
     )
 
 

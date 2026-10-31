@@ -6,6 +6,16 @@ A lightweight, deterministic financial statement analysis tool built with FastAP
 
 ---
 
+## 📌 Project governance
+
+This project is being extended per [bank_statement_agent_handoff.md](bank_statement_agent_handoff.md).
+Track implementation reasoning in these two files (kept separate on purpose):
+
+- [ASSUMPTIONS.md](ASSUMPTIONS.md) — provisional beliefs adopted where requirements/data are incomplete, with confidence and confirmation status.
+- [DECISIONS.md](DECISIONS.md) — deliberate implementation/product decisions actually taken, with rationale and affected files.
+
+---
+
 ## 🎯 Features
 
 ### Phase 1: Foundation
@@ -36,6 +46,20 @@ A lightweight, deterministic financial statement analysis tool built with FastAP
 - ✅ **Metrics:** Monthly credits/debits, estimated income, recurring obligations
 - ✅ **Data Quality Flags:** Reconciliation mismatches, large deposits, returns, etc.
 - ✅ **Append-Only History:** User corrections preserved
+
+### Individual & SME borrower analysis (extends Phases 1-7 of [bank_statement_agent_handoff.md](bank_statement_agent_handoff.md))
+- ✅ **Six-category classification** (internal transfer, salary, business receipt, refund/reversal, loan EMI, common expenses) with `POSSIBLE_BUSINESS_RECEIPT`/`UNVERIFIED_CREDIT` for unconfirmed third-party credits and expense subcategories (groceries, dining, transport, etc.) - `app/pipeline/categories.py`, `app/pipeline/classify.py`
+- ✅ **Individual metrics:** VNMI, NAMB, FOIR/DTI, Salary-to-Obligation Cleansing Cycle, Discretionary Spending Ratio - `app/pipeline/individual_metrics.py`
+- ✅ **SME metrics:** GBT, DSCR, Customer Concentration (top-1/top-3), CC/OD Utilization, Trade Inflow-to-Outflow Ratio - `app/pipeline/sme_metrics.py`
+- ✅ **Red-flag metrics:** NSF/Bounce Counter, Round-tripping (possible circular flow), EOD Balance Stress - `app/pipeline/redflags.py`
+- ✅ **Category-specific anomaly detection** (per the handoff's per-category anomaly lists) - `app/pipeline/anomalies.py`
+- ✅ **Behavioural analysis** (median/percentage deviation, robust to outliers) - `app/pipeline/behavioral.py`
+- ✅ **Borrower-assessment rule engine** with configurable thresholds, explainable indicators and an audit trail (`RuleEvaluation`, never an auto approve/reject) - `app/pipeline/rules_engine.py`, `app/config/thresholds.py`
+- ✅ **AI Reviewer** (deterministic evidence-gathering + optional LLM synthesis, Anthropic Claude) running after anomaly detection and before human review - `app/ai/`
+- ✅ **Individual and SME reports** with drill-down, grouped alerts and AI Reviewer findings - `app/pipeline/reports.py`, `/assessment` page
+- ✅ **Customer/entity-type linking** and **CC/OD facility metadata** (manually supplied, never inferred) - `Customer`, `Facility` models
+
+See [ASSUMPTIONS.md](ASSUMPTIONS.md) and [DECISIONS.md](DECISIONS.md) for what's provisional vs. deliberately decided in this extension, including entity-type selection, the AI Reviewer's LLM provider, and threshold configuration.
 
 ---
 
@@ -148,6 +172,22 @@ GET    /api/metrics/flags              # Flag queue
 GET    /api/accounts                   # List accounts
 POST   /api/reset                      # Clear database
 ```
+
+### Assessment (Individual/SME borrower analysis)
+```
+POST   /api/assessment/customers                              # Create a customer (name, entity_type)
+POST   /api/assessment/accounts/{id}/link-customer/{cid}       # Link an account to a customer
+POST   /api/assessment/facilities                               # Record CC/OD sanctioned limit for an account
+POST   /api/assessment/account/{id}/anomalies/run               # Category-specific anomaly detection
+POST   /api/assessment/account/{id}/redflags/run                # NSF/bounce, round-tripping, EOD balance stress
+GET    /api/assessment/account/{id}                             # Explainable indicators + review priority
+GET    /api/assessment/account/{id}/report                      # Full Individual or SME report
+POST   /api/assessment/account/{id}/ai-review/run                # Run the AI Reviewer on pending flags
+GET    /api/assessment/account/{id}/ai-review                   # List AI Reviewer findings
+POST   /api/assessment/ai-review/{id}/decide                     # Record a human decision on an AI-reviewed case
+```
+
+The AI Reviewer calls Anthropic's Claude API when `ANTHROPIC_API_KEY` is set (copy `.env.example` to `.env`); without a key it returns a deterministic `NEEDS_INFORMATION` placeholder instead of failing. See `app/ai/llm_client.py`.
 
 ---
 

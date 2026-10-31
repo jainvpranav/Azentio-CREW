@@ -8,10 +8,24 @@ from app.ingest.normalize import normalize_date, normalize_amount, clean_descrip
 from app.ingest.pdf_parser import ParsedTransaction, ParsedStatement, PDFParseError
 
 
+def _first_match(candidates: list, keywords: list) -> Optional[str]:
+    for c in candidates:
+        if any(kw in c.lower() for kw in keywords):
+            return c
+    return None
+
+
 def find_columns(df: pd.DataFrame) -> dict:
     """
     Find relevant columns in dataframe by keyword matching on header names.
-    Returns dict with keys: date, description, debit, credit, balance
+    Returns dict with keys: date, description, debit, credit, balance.
+
+    Strong (full-word) keywords are tried before short abbreviations
+    ('cr', 'dr', 'wd', 'in', 'out', 'dep'), and a column already assigned
+    to date/description is excluded from the debit/credit/balance search -
+    otherwise a narration-style header like "Description" (which contains
+    the substring "cr") can get mis-matched as the Credit column before the
+    real "Credit" column is even checked.
     """
     columns = {
         'date': None,
@@ -23,25 +37,23 @@ def find_columns(df: pd.DataFrame) -> dict:
 
     df_cols = list(df.columns)
 
-    # Date column
     date_candidates = [c for c in df_cols if any(x in c.lower() for x in ['date', 'txn', 'value'])]
     columns['date'] = date_candidates[0] if date_candidates else df_cols[0]
 
-    # Description column
     desc_candidates = [c for c in df_cols if any(x in c.lower() for x in ['description', 'narration', 'particulars', 'remarks'])]
     columns['description'] = desc_candidates[0] if desc_candidates else (df_cols[1] if len(df_cols) > 1 else None)
 
-    # Debit column
-    debit_candidates = [c for c in df_cols if any(x in c.lower() for x in ['debit', 'withdrawal', 'wd', 'dr', 'out'])]
-    columns['debit'] = debit_candidates[0] if debit_candidates else None
+    remaining = [c for c in df_cols if c not in (columns['date'], columns['description'])]
 
-    # Credit column
-    credit_candidates = [c for c in df_cols if any(x in c.lower() for x in ['credit', 'deposit', 'dep', 'cr', 'in'])]
-    columns['credit'] = credit_candidates[0] if credit_candidates else None
-
-    # Balance column
-    balance_candidates = [c for c in df_cols if any(x in c.lower() for x in ['balance', 'bal'])]
-    columns['balance'] = balance_candidates[0] if balance_candidates else None
+    columns['debit'] = (
+        _first_match(remaining, ['debit', 'withdrawal'])
+        or _first_match(remaining, ['wd', 'dr', 'out'])
+    )
+    columns['credit'] = (
+        _first_match(remaining, ['credit', 'deposit'])
+        or _first_match(remaining, ['dep', 'cr', 'in'])
+    )
+    columns['balance'] = _first_match(remaining, ['balance', 'bal'])
 
     return columns
 

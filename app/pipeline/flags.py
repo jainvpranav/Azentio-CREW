@@ -13,12 +13,14 @@ def create_flag(
     message: str,
     txn_id: int = None,
     statement_id: int = None,
+    account_id: int = None,
     evidence: list = None
 ) -> Flag:
     """Create a flag"""
     flag = Flag(
         txn_id=txn_id,
         statement_id=statement_id,
+        account_id=account_id,
         flag_type=flag_type,
         severity=severity,
         message=message,
@@ -43,6 +45,7 @@ def check_reconciliation_mismatches(session: Session) -> dict:
                 FlagSeverity.HIGH,
                 f"Statement mismatch: ₹{statement.discrepancy}. Opening + txns ≠ closing.",
                 statement_id=statement.id,
+                account_id=statement.account_id,
                 evidence=[statement.id]
             )
             count += 1
@@ -65,6 +68,7 @@ def check_duplicates(session: Session) -> dict:
             "DUPLICATES_REMOVED",
             FlagSeverity.INFO,
             f"Found and deduplicated {len(dup_ids)} transactions.",
+            account_id=account_id,
             evidence=dup_ids
         )
 
@@ -97,6 +101,7 @@ def check_large_cash_deposits(session: Session) -> dict:
                     FlagSeverity.WARN,
                     f"Large cash deposit: ₹{txn.credit}. Requires review.",
                     txn_id=txn.id,
+                    account_id=account.id,
                     evidence=[txn.id]
                 )
                 count += 1
@@ -132,6 +137,7 @@ def check_round_figures(session: Session) -> dict:
                     FlagSeverity.WARN,
                     f"Round figure credit: ₹{txn.credit}. May need review.",
                     txn_id=txn.id,
+                    account_id=account.id,
                     evidence=[txn.id]
                 )
                 count += 1
@@ -162,6 +168,7 @@ def check_returned_payments(session: Session) -> dict:
                     FlagSeverity.HIGH,
                     "Payment returned or bounced. Requires investigation.",
                     txn_id=txn.id,
+                    account_id=txn.account_id,
                     evidence=[txn.id]
                 )
                 count += 1
@@ -185,6 +192,7 @@ def check_missing_months(session: Session) -> dict:
                 "MISSING_MONTH",
                 FlagSeverity.WARN,
                 f"No statement coverage for: {', '.join(missing)}. Not counted as zero in any metric.",
+                account_id=account.id,
             )
             count += 1
 
@@ -207,6 +215,7 @@ def check_low_balance(session: Session) -> dict:
                     "LOW_BALANCE",
                     FlagSeverity.WARN,
                     f"{days} days below ₹{trend['threshold']:.0f} balance in {month}.",
+                    account_id=account.id,
                 )
                 count += 1
 
@@ -233,6 +242,7 @@ def check_income_decline(session: Session) -> dict:
                 "INCOME_DECLINE",
                 FlagSeverity.WARN,
                 f"Last 3 months' income (₹{last_3:.0f}) is below 70% of the prior 3 months' (₹{prior_3:.0f}).",
+                account_id=account.id,
             )
             count += 1
 

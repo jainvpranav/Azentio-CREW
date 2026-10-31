@@ -279,6 +279,14 @@ def main():
     )
     add_ground_truth(ground_truth, "ledger.xlsx", sc.LEDGER_XLSX_ROWS)
 
+    # ---- SME scenario: concentration, supplier payments, possible
+    # circular flow, NSF bounce (handoff Phase 8). ----
+    write_csv(
+        os.path.join(OUTPUT_DIR, "sme_business.csv"), sc.SME_LEDGER,
+        {"date": "Date", "description": "Description", "debit": "Debit", "credit": "Credit"},
+    )
+    add_ground_truth(ground_truth, "sme_business.csv", sc.SME_LEDGER)
+
     with open(os.path.join(OUTPUT_DIR, "ground_truth.json"), "w", encoding="utf-8") as f:
         json.dump(ground_truth, f, indent=2)
 

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Assessment - Bank Statement Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="assessmentPage()" x-init="loadAccounts()" class="card">
+    <h2>Borrower Assessment</h2>
+    <p class="text-sm text-muted">Explainable indicators for analyst review. Not an automated approve/reject decision, and never a fraud/default determination.</p>
+
+    <div x-show="accounts.length === 0" style="text-align: center; color: #999; padding: 40px;">
+        No accounts yet. <a href="/" style="color: #3b82f6;">Go to Upload &rarr;</a>
+    </div>
+
+    <template x-if="accounts.length > 0">
+        <div>
+            <div class="flex gap-3" style="align-items: flex-end; margin: 15px 0;">
+                <div class="form-group" style="max-width: 320px; margin-bottom: 0;">
+                    <label>Account</label>
+                    <select x-model.number="selectedAccountId" @change="loadReport()">
+                        <template x-for="acc in accounts" :key="acc.id">
+                            <option :value="acc.id" x-text="acc.bank_name + ' — XXXX' + String(acc.account_number).slice(-4)"></option>
+                        </template>
+                    </select>
+                </div>
+                <div class="form-group" style="max-width: 200px; margin-bottom: 0;">
+                    <label>Entity type (for this view)</label>
+                    <select x-model="entityTypeOverride" @change="loadReport()">
+                        <option value="">Use stored customer link</option>
+                        <option value="INDIVIDUAL">Individual</option>
+                        <option value="SME">SME</option>
+                    </select>
+                </div>
+                <button @click="runPipeline()" :disabled="running">Run anomalies + red flags</button>
+                <button @click="runAIReview()" :disabled="running" class="secondary">Run AI Reviewer</button>
+            </div>
+
+            <div x-show="running" class="alert alert-success"><span class="loading"></span> Running...</div>
+            <div x-show="lastActionMessage" class="alert alert-success text-sm" x-text="lastActionMessage"></div>
+
+            <template x-if="report">
+                <div>
+                    <div class="alert" :class="reviewPriorityClass">
+                        <strong x-text="report.report_type + ' report'"></strong> —
+                        review priority: <strong x-text="report.review_priority"></strong>
+                        <div class="text-sm" x-text="report.review_priority_note"></div>
+                    </div>
+
+                    <h3 class="mt-2">Indicators</h3>
+                    <table>
+                        <thead>
+                            <tr><th>Rule</th><th>Metric</th><th>Value</th><th>Band / result</th><th>Confidence</th></tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="i in report.indicators" :key="i.rule_id">
+                                <tr>
+                                    <td x-text="i.rule_id"></td>
+                                    <td x-text="i.metric_name"></td>
+                                    <td x-text="formatIndicatorValue(i.metric_value)"></td>
+                                    <td><span class="status-pill" x-text="i.result"></span></td>
+                                    <td><small x-text="i.confidence"></small></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+
+                    <h3 class="mt-2">Red flags <small class="text-muted">(grouped by type)</small></h3>
+                    <template x-if="Object.keys(report.red_flags).length === 0">
+                        <p class="text-sm text-muted">No red flags raised.</p>
+                    </template>
+                    <template x-for="(group, flagType) in report.red_flags" :key="flagType">
+                        <div class="card" style="margin-bottom: 8px; border-left: 4px solid #f59e0b;">
+                            <strong x-text="flagType + ' (' + group.count + ')'"></strong>
+                            <span class="status-pill" x-text="group.severity"></span>
+                            <div class="text-sm text-muted" x-text="group.items[0] && group.items[0].message"></div>
+                        </div>
+                    </template>
+
+                    <h3 class="mt-2">AI Reviewer findings</h3>
+                    <template x-if="report.ai_reviewer_findings.length === 0">
+                        <p class="text-sm text-muted">No AI reviews yet for this account's flags. Click "Run AI Reviewer" above.</p>
+                    </template>
+                    <template x-for="f in report.ai_reviewer_findings" :key="f.case_id">
+                        <div class="card" style="margin-bottom: 8px; border-left: 4px solid #3b82f6;">
+                            <div class="flex" style="justify-content: space-between;">
+                                <strong x-text="f.case_id + ' — ' + f.triggered_rule"></strong>
+                                <span class="status-pill" x-text="f.recommendation"></span>
+                            </div>
+                            <p class="text-sm"><strong>Observed:</strong> <span x-text="f.observed_facts"></span></p>
+                            <p class="text-sm" x-show="f.possible_explanations"><strong>Possible explanations:</strong> <span x-text="f.possible_explanations"></span></p>
+                            <p class="text-sm" x-show="f.unresolved_questions"><strong>Unresolved:</strong> <span x-text="f.unresolved_questions"></span></p>
+                            <p class="text-sm text-muted" x-show="!f.llm_model_name">No LLM provider configured - this is a deterministic placeholder result.</p>
+                            <p class="text-sm">Human decision: <span x-text="f.human_decision"></span></p>
+                        </div>
+                    </template>
+
+                    <h3 class="mt-2">Disclaimer</h3>
+                    <p class="text-sm text-muted" x-text="report.disclaimer"></p>
+                </div>
+            </template>
+        </div>
+    </template>
+</div>
+
+<script>
+function assessmentPage() {
+    return {
+        accounts: [],
+        selectedAccountId: null,
+        entityTypeOverride: '',
+        report: null,
+        running: false,
+        lastActionMessage: '',
+
+        get reviewPriorityClass() {
+            if (!this.report) return 'alert-success';
+            if (this.report.review_priority === 'higher_review_priority') return 'alert-warning';
+            return 'alert-success';
+        },
+
+        async loadAccounts() {
+            const res = await fetch('/api/accounts');
+            this.accounts = await res.json();
+            if (this.accounts.length > 0) {
+                this.selectedAccountId = this.accounts[0].id;
+                await this.loadReport();
+            }
+        },
+
+        async loadReport() {
+            if (!this.selectedAccountId) return;
+            const q = this.entityTypeOverride ? `?entity_type=${this.entityTypeOverride}` : '';
+            const res = await fetch(`/api/assessment/account/${this.selectedAccountId}/report${q}`);
+            this.report = await res.json();
+        },
+
+        async runPipeline() {
+            this.running = true;
+            try {
+                await fetch(`/api/assessment/account/${this.selectedAccountId}/anomalies/run`, { method: 'POST' });
+                await fetch(`/api/assessment/account/${this.selectedAccountId}/redflags/run`, { method: 'POST' });
+                await this.loadReport();
+                this.lastActionMessage = 'Anomaly detection and red-flag metrics updated.';
+            } finally {
+                this.running = false;
+            }
+        },
+
+        async runAIReview() {
+            this.running = true;
+            try {
+                const res = await fetch(`/api/assessment/account/${this.selectedAccountId}/ai-review/run`, { method: 'POST' });
+                const result = await res.json();
+                this.lastActionMessage = result.llm_configured
+                    ? `AI Reviewer ran on ${result.reviewed_count} case(s).`
+                    : `AI Reviewer ran on ${result.reviewed_count} case(s) - no LLM provider configured, deterministic placeholder used (see ASSUMPTIONS.md A-005).`;
+                await this.loadReport();
+            } finally {
+                this.running = false;
+            }
+        },
+
+        formatIndicatorValue(value) {
+            if (value === null || value === undefined) return '—';
+            if (typeof value === 'string') return value;
+            return typeof value === 'number' ? value.toFixed(2) : String(value);
+        },
+    }
+}
+</script>
+{% endblock %}

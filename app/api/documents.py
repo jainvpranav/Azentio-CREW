@@ -11,6 +11,7 @@ import tempfile
 from app.db import get_session
 from app.models import Document, DocumentStatus, DocumentResponse, Account, Statement, Transaction
 from app.ingest.router import parse_statement
+from app.ingest.normalize import extract_transaction_metadata
 
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -129,6 +130,7 @@ async def upload_documents(
 
                     # Create Transactions
                     for parsed_txn in parsed.transactions:
+                        meta = extract_transaction_metadata(parsed_txn.description)
                         txn = Transaction(
                             statement_id=statement.id,
                             account_id=account.id,
@@ -142,6 +144,10 @@ async def upload_documents(
                             credit=parsed_txn.credit,
                             balance=parsed_txn.balance,
                             raw_text=parsed_txn.raw_text,
+                            transaction_type=meta["transaction_type"],
+                            reference_number=meta["reference_number"],
+                            counterparty=meta["counterparty"],
+                            counterparty_account=meta["counterparty_account"],
                         )
                         session.add(txn)
                     session.commit()

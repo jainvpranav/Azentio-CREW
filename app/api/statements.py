@@ -55,17 +55,25 @@ def dedupe_all(session: Session = Depends(get_session)):
 @router.post("/process-all")
 def process_all_documents(session: Session = Depends(get_session)):
     """
-    Run the full post-upload pipeline:
+    Run the full post-upload pipeline (handoff: "Normalized transactions ->
+    Classification -> Metric calculation -> Deterministic anomaly detection
+    -> AI Reviewer -> Human review"; the AI Reviewer step is intentionally
+    NOT run here - see app/api/assessment.py:run_ai_review - since it may
+    call a paid external API and should be triggered explicitly):
     1. Deduplicate all accounts
     2. Reconcile all statements
     3. Get coverage for all accounts
     4. Classify all transactions (rules + pairing)
-    5. Generate review flags
+    5. Generate data-quality review flags
+    6. Category-specific anomaly detection (Phase 1 anomaly lists)
+    7. Red-flag metrics: NSF/bounce, round-tripping, EOD balance stress (Phase 3)
     """
-    from app.models import Statement
+    from app.models import Statement, Account
     from sqlmodel import select
     from app.pipeline.classify import classify_all_transactions
     from app.pipeline.flags import generate_all_flags
+    from app.pipeline import anomalies as anomalies_pipeline
+    from app.pipeline.redflags import generate_red_flags_all
 
     # 1. Deduplicate
     dedupe_result = deduplicate_all(session)
@@ -86,6 +94,11 @@ def process_all_documents(session: Session = Depends(get_session)):
     # 5. Flags (depends on reconcile + classify having run)
     flags_result = generate_all_flags(session)
 
+    # 6-7. Category anomalies + red-flag metrics (depend on classify having run)
+    accounts = session.exec(select(Account)).all()
+    anomalies_result = {a.id: anomalies_pipeline.run_all(session, a.id) for a in accounts}
+    redflags_result = generate_red_flags_all(session)
+
     return {
         "dedupe": dedupe_result,
         "reconcile": {
@@ -95,6 +108,8 @@ def process_all_documents(session: Session = Depends(get_session)):
         "coverage": coverage_result,
         "classify": classify_result,
         "flags": flags_result,
+        "anomalies_by_account": anomalies_result,
+        "redflags_by_account": redflags_result,
     }
 
 

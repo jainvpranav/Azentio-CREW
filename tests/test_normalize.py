@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 import math
 
-from app.ingest.normalize import normalize_date, normalize_amount, clean_description
+from app.ingest.normalize import normalize_date, normalize_amount, clean_description, extract_transaction_metadata
 
 
 def test_normalize_date_formats():
@@ -37,3 +37,30 @@ def test_normalize_amount_none_passthrough():
 
 def test_clean_description_collapses_whitespace():
     assert clean_description("  UPI   PAYMENT   ") == "UPI PAYMENT"
+
+
+def test_extract_metadata_prose_style_counterparty():
+    meta = extract_transaction_metadata("UPI CR FROM BRIGHT RETAIL")
+    assert meta["transaction_type"] == "UPI"
+    assert meta["counterparty"] == "BRIGHT RETAIL"
+
+
+def test_extract_metadata_same_counterparty_across_rails():
+    # Same real counterparty, different payment rail wording - must extract
+    # the same counterparty string so recurrence-based rules group them.
+    a = extract_transaction_metadata("UPI CR FROM ZEN ENTERPRISES")
+    b = extract_transaction_metadata("NEFT CR FROM ZEN ENTERPRISES")
+    assert a["counterparty"] == b["counterparty"] == "ZEN ENTERPRISES"
+
+
+def test_extract_metadata_slash_delimited_style():
+    meta = extract_transaction_metadata("UPI/P2A/412233445566/JOHN DOE/HDFC")
+    assert meta["transaction_type"] == "UPI"
+    assert meta["reference_number"] == "412233445566"
+    assert meta["counterparty"] == "JOHN DOE"
+
+
+def test_extract_metadata_no_shape_leaves_counterparty_none():
+    meta = extract_transaction_metadata("RANDOM SHOP PURCHASE")
+    assert meta["counterparty"] is None
+    assert meta["transaction_type"] is None
