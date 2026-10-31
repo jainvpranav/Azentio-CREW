@@ -346,7 +346,7 @@ def main():
     )
     add_ground_truth(ground_truth, "sme_business.csv", sc.SME_LEDGER)
 
-    # ---- UAE / Oman foreign-currency examples ----
+    # ---- UAE / Oman foreign-currency examples (original thin ledgers) ----
     uae_rows = compute_balances(sc.UAE_OPENING, sc.UAE_LEDGER)
     uae_file = slice_range(uae_rows, sc.UAE_OPENING, *sc.UAE_FILE_RANGE)
     write_layout_a_pdf(
@@ -366,6 +366,36 @@ def main():
         currency=sc.AED_ACCOUNT["currency"],
     )
     add_ground_truth(ground_truth, "emirates_nbd_aed_apr_sep.pdf", aed_file["rows"])
+
+    # ---- OMR MASTER DATASET (3 formats, same holder YUSUF AL-RASHIDI) ----
+
+    # 1. Bank Muscat — rich 6-month Layout A PDF (all categories + planted flags)
+    omr_master_rows = compute_balances(sc.OMR_MASTER_OPENING, sc.OMR_MASTER_LEDGER)
+    omr_master_file = slice_range(omr_master_rows, sc.OMR_MASTER_OPENING, *sc.OMR_MASTER_FILE_RANGE)
+    write_layout_a_pdf(
+        os.path.join(OUTPUT_DIR, "bank_muscat_omr_master.pdf"),
+        sc.OMR_MASTER_ACCOUNT["holder_name"],
+        sc.OMR_MASTER_ACCOUNT["account_number"],
+        sc.OMR_MASTER_ACCOUNT["bank_name"],
+        sc.OMR_MASTER_FILE_RANGE[0], sc.OMR_MASTER_FILE_RANGE[1],
+        omr_master_file["opening"], omr_master_file["closing"],
+        omr_master_file["rows"],
+        currency=sc.OMR_MASTER_ACCOUNT["currency"],
+    )
+    add_ground_truth(ground_truth, "bank_muscat_omr_master.pdf", omr_master_file["rows"])
+
+    # 2. National Bank of Oman — CSV format (pairs internal transfers with Account 1)
+    nbo_rows = compute_balances(sc.OMR_NBO_OPENING, sc.OMR_NBO_LEDGER)
+    nbo_file = slice_range(nbo_rows, sc.OMR_NBO_OPENING, *sc.OMR_NBO_FILE_RANGE)
+    write_csv(
+        os.path.join(OUTPUT_DIR, "nbo_omr_current.csv"),
+        [(r["date"], r["desc"], r["debit"], r["credit"], r["category"]) for r in nbo_file["rows"]],
+        {"date": "Value Date", "description": "Description", "debit": "Debit (OMR)", "credit": "Credit (OMR)"},
+    )
+    add_ground_truth(ground_truth, "nbo_omr_current.csv", nbo_file["rows"])
+
+    # 3. Bank Dhofar — scanned image-only PDF (OCR pipeline challenge)
+    write_scanned_image_pdf(os.path.join(OUTPUT_DIR, "bank_dhofar_omr_scanned.pdf"), accent="#1a4a6b")
 
     with open(os.path.join(OUTPUT_DIR, "ground_truth.json"), "w", encoding="utf-8") as f:
         json.dump(ground_truth, f, indent=2)

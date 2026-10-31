@@ -232,3 +232,124 @@ AED_LEDGER = [
     (date(2026, 9, 22), "BANK CHARGES", D("35.00"), None, "BANK_CHARGES"),
 ]
 AED_FILE_RANGE = (date(2026, 4, 1), date(2026, 9, 30))
+
+# ============================================================
+# OMR MASTER DATASET — Bank Muscat savings (Layout A PDF)
+# Holder: YUSUF AL-RASHIDI
+# 6-month comprehensive ledger covering every transaction category
+# the pipeline supports, plus planted flag scenarios:
+#   • NSF / returned payment (July)
+#   • Possible round-trip pair (August, AL-MUBARAK TRADING)
+#   • EOD balance stress (July — high summer utility + NSF)
+#   • INTERNAL_TRANSFER pairs with NBO account below
+#   • Two POSSIBLE_BUSINESS_RECEIPT (single-occurrence consulting)
+#   • INTEREST and BANK_CHARGES
+# ============================================================
+
+OMR_MASTER_ACCOUNT = {
+    "holder_name": "YUSUF AL-RASHIDI",
+    "account_number": "OM0123456780",
+    "bank_name": "Bank Muscat",
+    "currency": "OMR",
+}
+
+OMR_MASTER_OPENING = D("2800.000")
+
+OMR_MASTER_LEDGER = [
+    # ── April ──
+    (date(2026, 4, 1),  "SALARY CREDIT - OMAN OIL COMPANY APR",     None,           D("1850.000"), "SALARY"),
+    (date(2026, 4, 3),  "HOME LOAN EMI BFIN2023",                    D("385.000"),   None,          "LOAN_EMI"),
+    (date(2026, 4, 5),  "MZEC ELECTRICITY BILL APR",                 D("44.500"),    None,          "UTILITIES"),
+    (date(2026, 4, 7),  "OMANTEL POSTPAID APR",                      D("28.000"),    None,          "UTILITIES"),
+    (date(2026, 4, 10), "LULU HYPERMARKET MUSCAT CITY CENTRE",       D("125.300"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 4, 15), "TRANSFER TO OWN A/C NBO 6504",              D("500.000"),   None,          "INTERNAL_TRANSFER"),
+    (date(2026, 4, 18), "CARREFOUR OMAN ONLINE",                     D("87.500"),    None,          "OTHER_EXPENSE"),
+    (date(2026, 4, 22), "ATM CASH WITHDRAWAL RUWI BRANCH",           D("200.000"),   None,          "CASH_WITHDRAWAL"),
+    (date(2026, 4, 28), "REFUND - NOON.COM ORDER OM4412",            None,           D("45.000"),   "REFUND"),
+    # ── May ──
+    (date(2026, 5, 1),  "SALARY CREDIT - OMAN OIL COMPANY MAY",     None,           D("1850.000"), "SALARY"),
+    (date(2026, 5, 3),  "HOME LOAN EMI BFIN2023",                    D("385.000"),   None,          "LOAN_EMI"),
+    (date(2026, 5, 5),  "MZEC ELECTRICITY BILL MAY",                 D("52.000"),    None,          "UTILITIES"),
+    (date(2026, 5, 7),  "OOREDOO MOBILE POSTPAID MAY",               D("22.000"),    None,          "UTILITIES"),
+    (date(2026, 5, 9),  "CAR LOAN EMI OMAN AUTO 1144",               D("142.500"),   None,          "LOAN_EMI"),
+    (date(2026, 5, 12), "AL MEERA CONSUMER GOODS MUSCAT",            D("94.200"),    None,          "OTHER_EXPENSE"),
+    (date(2026, 5, 15), "TRANSFER TO OWN A/C NBO 6504",              D("500.000"),   None,          "INTERNAL_TRANSFER"),
+    (date(2026, 5, 20), "CASH DEPOSIT MATRAH BRANCH",                None,           D("300.000"),  "CASH_DEPOSIT"),
+    (date(2026, 5, 25), "CONSULTING PAYMENT - TECHSOL OM",           None,           D("600.000"),  "POSSIBLE_BUSINESS_RECEIPT"),
+    # ── June ──
+    (date(2026, 6, 1),  "SALARY CREDIT - OMAN OIL COMPANY JUN",     None,           D("1850.000"), "SALARY"),
+    (date(2026, 6, 3),  "HOME LOAN EMI BFIN2023",                    D("385.000"),   None,          "LOAN_EMI"),
+    (date(2026, 6, 5),  "MZEC ELECTRICITY BILL JUN",                 D("68.500"),    None,          "UTILITIES"),
+    (date(2026, 6, 8),  "MARKAZ AL BAHJA SHOPPING CENTRE",           D("175.000"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 6, 9),  "CAR LOAN EMI OMAN AUTO 1144",               D("142.500"),   None,          "LOAN_EMI"),
+    (date(2026, 6, 15), "TRANSFER TO OWN A/C NBO 6504",              D("500.000"),   None,          "INTERNAL_TRANSFER"),
+    (date(2026, 6, 20), "BANK SERVICE CHARGE Q2",                    D("5.000"),     None,          "BANK_CHARGES"),
+    (date(2026, 6, 25), "INTEREST CREDIT SAVINGS Q2",                None,           D("14.350"),   "INTEREST"),
+    # ── July — cash stress: peak summer utility + NSF bounce ──
+    (date(2026, 7, 1),  "SALARY CREDIT - OMAN OIL COMPANY JUL",     None,           D("1850.000"), "SALARY"),
+    (date(2026, 7, 3),  "HOME LOAN EMI BFIN2023",                    D("385.000"),   None,          "LOAN_EMI"),
+    (date(2026, 7, 5),  "MZEC ELECTRICITY BILL JUL",                 D("95.000"),    None,          "UTILITIES"),
+    (date(2026, 7, 8),  "NACH RTN INSUFFICIENT FUNDS",               D("28.000"),    None,          "RETURNED_PAYMENT"),
+    (date(2026, 7, 9),  "CAR LOAN EMI OMAN AUTO 1144",               D("142.500"),   None,          "LOAN_EMI"),
+    (date(2026, 7, 12), "LULU HYPERMARKET QURUM",                    D("138.700"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 7, 15), "TRANSFER TO OWN A/C NBO 6504",              D("400.000"),   None,          "INTERNAL_TRANSFER"),
+    (date(2026, 7, 18), "ATM CASH WITHDRAWAL QURUM ATM",             D("100.000"),   None,          "CASH_WITHDRAWAL"),
+    (date(2026, 7, 22), "CONSULTING PAYMENT - TECHSOL OM",           None,           D("600.000"),  "POSSIBLE_BUSINESS_RECEIPT"),
+    # ── August — possible round-trip pair (AL-MUBARAK TRADING) ──
+    (date(2026, 8, 1),  "SALARY CREDIT - OMAN OIL COMPANY AUG",     None,           D("1850.000"), "SALARY"),
+    (date(2026, 8, 3),  "HOME LOAN EMI BFIN2023",                    D("385.000"),   None,          "LOAN_EMI"),
+    (date(2026, 8, 5),  "MZEC ELECTRICITY BILL AUG",                 D("88.000"),    None,          "UTILITIES"),
+    (date(2026, 8, 9),  "CAR LOAN EMI OMAN AUTO 1144",               D("142.500"),   None,          "LOAN_EMI"),
+    (date(2026, 8, 12), "NEFT TO AL-MUBARAK TRADING LLC",            D("800.000"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 8, 13), "NEFT FROM AL-MUBARAK TRADING LLC",          None,           D("790.000"),  "POSSIBLE_BUSINESS_RECEIPT"),
+    (date(2026, 8, 15), "TRANSFER TO OWN A/C NBO 6504",              D("500.000"),   None,          "INTERNAL_TRANSFER"),
+    (date(2026, 8, 22), "CARD PAYMENT OMAN AIR BOOKING",             D("245.000"),   None,          "CARD_PAYMENT"),
+    # ── September ──
+    (date(2026, 9, 1),  "SALARY CREDIT - OMAN OIL COMPANY SEP",     None,           D("1850.000"), "SALARY"),
+    (date(2026, 9, 3),  "HOME LOAN EMI BFIN2023",                    D("385.000"),   None,          "LOAN_EMI"),
+    (date(2026, 9, 5),  "MZEC ELECTRICITY BILL SEP",                 D("72.000"),    None,          "UTILITIES"),
+    (date(2026, 9, 8),  "CAR LOAN EMI OMAN AUTO 1144",               D("142.500"),   None,          "LOAN_EMI"),
+    (date(2026, 9, 10), "CONSULTING INCOME - MAZOON DIGITAL",        None,           D("750.000"),  "POSSIBLE_BUSINESS_RECEIPT"),
+    (date(2026, 9, 15), "TRANSFER TO OWN A/C NBO 6504",              D("500.000"),   None,          "INTERNAL_TRANSFER"),
+    (date(2026, 9, 18), "CARREFOUR OMAN HYPERMARKET QURUM",          D("112.600"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 9, 22), "OMANTEL POSTPAID SEP",                      D("28.000"),    None,          "UTILITIES"),
+    (date(2026, 9, 28), "BANK SERVICE CHARGES Q3",                   D("8.500"),     None,          "BANK_CHARGES"),
+]
+OMR_MASTER_FILE_RANGE = (date(2026, 4, 1), date(2026, 9, 30))
+
+# ============================================================
+# OMR SECOND ACCOUNT — National Bank of Oman current (CSV)
+# Paired with OMR_MASTER_ACCOUNT via internal transfers.
+# Demonstrates cross-account pairing and XFER_PAIR rule.
+# ============================================================
+
+OMR_NBO_ACCOUNT = {
+    "holder_name": "YUSUF AL-RASHIDI",
+    "account_number": "OM0098765040",
+    "bank_name": "National Bank of Oman",
+    "currency": "OMR",
+}
+
+OMR_NBO_OPENING = D("1200.000")
+
+OMR_NBO_LEDGER = [
+    (date(2026, 4, 15), "TFR FROM OWN A/C BANK MUSCAT 6780",  None,          D("500.000"),  "INTERNAL_TRANSFER"),
+    (date(2026, 4, 22), "RENT PAYMENT BAUSHER FLAT",           D("300.000"),  None,          "RENT"),
+    (date(2026, 4, 26), "SPINNEYS MUSCAT GROCERY",             D("88.750"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 5, 15), "TFR FROM OWN A/C BANK MUSCAT 6780",  None,          D("500.000"),  "INTERNAL_TRANSFER"),
+    (date(2026, 5, 20), "RENT PAYMENT BAUSHER FLAT",           D("300.000"),  None,          "RENT"),
+    (date(2026, 5, 27), "PHARMACARE MUSCAT",                   D("34.500"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 6, 15), "TFR FROM OWN A/C BANK MUSCAT 6780",  None,          D("500.000"),  "INTERNAL_TRANSFER"),
+    (date(2026, 6, 20), "RENT PAYMENT BAUSHER FLAT",           D("300.000"),  None,          "RENT"),
+    (date(2026, 6, 25), "INTEREST CREDIT Q2",                  None,          D("6.120"),    "INTEREST"),
+    (date(2026, 7, 15), "TFR FROM OWN A/C BANK MUSCAT 6780",  None,          D("400.000"),  "INTERNAL_TRANSFER"),
+    (date(2026, 7, 20), "RENT PAYMENT BAUSHER FLAT",           D("300.000"),  None,          "RENT"),
+    (date(2026, 7, 28), "ATM CASH WITHDRAWAL NBO RUWI",        D("150.000"),  None,          "CASH_WITHDRAWAL"),
+    (date(2026, 8, 15), "TFR FROM OWN A/C BANK MUSCAT 6780",  None,          D("500.000"),  "INTERNAL_TRANSFER"),
+    (date(2026, 8, 20), "RENT PAYMENT BAUSHER FLAT",           D("300.000"),  None,          "RENT"),
+    (date(2026, 8, 24), "LULU EXPRESS BAUSHER",                D("62.300"),   None,          "OTHER_EXPENSE"),
+    (date(2026, 9, 15), "TFR FROM OWN A/C BANK MUSCAT 6780",  None,          D("500.000"),  "INTERNAL_TRANSFER"),
+    (date(2026, 9, 20), "RENT PAYMENT BAUSHER FLAT",           D("300.000"),  None,          "RENT"),
+    (date(2026, 9, 27), "BANK CHARGES Q3",                     D("5.000"),    None,          "BANK_CHARGES"),
+]
+OMR_NBO_FILE_RANGE = (date(2026, 4, 1), date(2026, 9, 30))
