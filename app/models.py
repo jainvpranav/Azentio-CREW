@@ -126,12 +126,14 @@ class Document(SQLModel, table=True):
     """Uploaded statement document"""
     id: Optional[int] = Field(default=None, primary_key=True)
     filename: str
-    file_type: str  # pdf, csv, xlsx, json
+    file_type: str  # pdf, csv, xlsx, json, png, jpg, jpeg
     sha256: Optional[str] = Field(default=None, index=True)  # detect re-upload
     status: DocumentStatus = DocumentStatus.UPLOADED
     pages_total: Optional[int] = None
     pages_parsed: Optional[int] = None
     errors: Optional[str] = None  # JSON list
+    extraction_method: Optional[str] = None  # native_pdf, ocr_pdf, csv, json, image_ocr
+    ocr_confidence: Optional[float] = None   # average OCR confidence 0-100, when OCR was used
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -148,6 +150,7 @@ class Statement(SQLModel, table=True):
     reconciled: bool = False
     discrepancy: Optional[Decimal] = None
     discrepancy_rows: Optional[str] = None  # JSON
+    currency: Optional[str] = None  # ISO 3-letter code, None if multi-currency or unknown
 
 
 class Transaction(SQLModel, table=True):
@@ -176,6 +179,9 @@ class Transaction(SQLModel, table=True):
     counterparty_account: Optional[str] = None
     reference_number: Optional[str] = None  # UTR / bank reference / RRN if present in narration
     transaction_type: Optional[str] = None  # UPI / NEFT / IMPS / RTGS / ATM / CASH / CHEQUE / ECS / NACH / OTHER
+    currency: Optional[str] = None          # ISO 3-letter code; None = not determinable (flag for review)
+    raw_debit: Optional[str] = None         # original debit text before normalization
+    raw_credit: Optional[str] = None        # original credit text before normalization
 
 
 class Classification(SQLModel, table=True):
@@ -302,3 +308,5 @@ class DocumentResponse(SQLModel):
     pages_total: Optional[int]
     pages_parsed: Optional[int]
     errors: Optional[List[dict]] = None
+    extraction_method: Optional[str] = None
+    ocr_confidence: Optional[float] = None

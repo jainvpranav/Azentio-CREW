@@ -1,305 +1,207 @@
-{% extends "base.html" %} {% block title %}Upload Statements — Credit Analyst{%
-endblock %} {% block content %}
+{% extends "base.html" %}
+
+{% block title %}Upload Statements — Credit Analyst{% endblock %}
+
+{% block content %}
 <div x-data="uploadPage()">
-  <!-- Page header -->
-  <div style="margin-bottom: 24px">
-    <h2
-      style="
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--gray-900);
-        margin-bottom: 4px;
-      "
-    >
-      Upload Bank Statements
-    </h2>
-    <p class="text-sm text-muted">
-      Supported formats: PDF, CSV, Excel (XLSX / XLS). Files are processed
-      locally and never leave this server.
-    </p>
-  </div>
 
-  <div class="card">
-    <!-- Upload area -->
-    <div
-      class="upload-area"
-      @click="$refs.fileInput.click()"
-      @dragover.prevent="dragActive = true"
-      @dragleave.prevent="dragActive = false"
-      @drop.prevent="handleDrop"
-      :style="dragActive ? 'border-color:var(--primary-mid); background:var(--primary-light);' : ''"
-    >
-      <p style="font-size: 28px; margin-bottom: 10px; opacity: 0.5">
-        &#128196;
-      </p>
-      <p
-        style="
-          font-size: 15px;
-          font-weight: 600;
-          margin-bottom: 6px;
-          color: var(--gray-700);
-        "
-      >
-        Click to choose files, or drag &amp; drop here
-      </p>
-      <p style="font-size: 12px; color: var(--gray-400)">
-        PDF, CSV, XLSX — multiple files supported
-      </p>
-      <input
-        type="file"
-        x-ref="fileInput"
-        multiple
-        accept=".pdf,.csv,.xlsx,.xls"
-        @change="handleFiles"
-        style="display: none"
-      />
+    <!-- Page header -->
+    <div style="margin-bottom:24px;">
+        <h2 style="font-size:22px; font-weight:700; color:var(--gray-900); margin-bottom:4px;">Upload Bank Statements</h2>
+        <p class="text-sm text-muted">Supported formats: PDF, CSV, Excel (XLSX / XLS), JSON, and scanned images (PNG / JPG / JPEG). Files are processed locally and never leave this server.</p>
     </div>
 
-    <!-- File list -->
-    <div x-show="files.length > 0" style="margin-top: 20px">
-      <div class="section-title">
-        Files to upload (<span x-text="files.length"></span>)
-      </div>
-      <div
-        style="
-          background: var(--gray-50);
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          max-height: 220px;
-          overflow-y: auto;
-        "
-      >
-        <template x-for="(file, idx) in files" :key="idx">
-          <div
-            style="
-              padding: 10px 14px;
-              border-bottom: 1px solid var(--border);
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-            "
-          >
-            <div>
-              <span
-                style="font-size: 13px; font-weight: 500"
-                x-text="file.name"
-              ></span>
-              <span
-                class="text-xs text-muted"
-                style="margin-left: 8px"
-                x-text="formatSize(file.size)"
-              ></span>
-            </div>
-            <button
-              type="button"
-              class="secondary"
-              style="padding: 3px 10px; font-size: 11px"
-              @click="removeFile(idx)"
+    <div class="card">
+        <!-- Upload area -->
+        <div
+            class="upload-area"
+            @click="$refs.fileInput.click()"
+            @dragover.prevent="dragActive = true"
+            @dragleave.prevent="dragActive = false"
+            @drop.prevent="handleDrop"
+            :style="dragActive ? 'border-color:var(--primary-mid); background:var(--primary-light);' : ''"
+        >
+            <p style="font-size:28px; margin-bottom:10px; opacity:0.5;">&#128196;</p>
+            <p style="font-size:15px; font-weight:600; margin-bottom:6px; color:var(--gray-700);">Click to choose files, or drag &amp; drop here</p>
+            <p style="font-size:12px; color:var(--gray-400);">PDF, CSV, XLSX, JSON, PNG/JPG — multiple files supported</p>
+            <input
+                type="file"
+                x-ref="fileInput"
+                multiple
+                accept=".pdf,.csv,.xlsx,.xls,.json,.png,.jpg,.jpeg"
+                @change="handleFiles"
+                style="display:none;"
             >
-              Remove
-            </button>
-          </div>
-        </template>
-      </div>
-    </div>
+        </div>
 
-    <!-- Upload button -->
-    <div style="margin-top: 20px">
-      <button
-        @click="uploadFiles()"
-        :disabled="files.length === 0 || uploading || processing"
-        style="
-          width: 100%;
-          padding: 12px;
-          font-size: 15px;
-          justify-content: center;
-        "
-      >
-        <span x-show="!uploading && !processing"
-          >&#8593; Upload <span x-text="files.length"></span> file<span
-            x-show="files.length !== 1"
-            >s</span
-          ></span
-        >
-        <span x-show="uploading"
-          ><span class="loading"></span>&nbsp; Uploading…</span
-        >
-        <span x-show="!uploading && processing"
-          ><span class="loading"></span>&nbsp; Processing statements…</span
-        >
-      </button>
-    </div>
-
-    <!-- Message -->
-    <div
-      x-show="message"
-      class="alert"
-      :class="'alert-' + messageType"
-      style="margin-top: 16px"
-    >
-      <span x-text="message"></span>
-    </div>
-  </div>
-
-  <!-- Upload results -->
-  <div x-show="results.length > 0" class="card" style="margin-top: 0">
-    <h3>Upload Results</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Filename</th>
-          <th>Format</th>
-          <th>Status</th>
-          <th>Transactions</th>
-          <th>Pages Parsed</th>
-          <th>Details</th>
-        </tr>
-      </thead>
-      <tbody>
-        <template x-for="result in results" :key="result.filename">
-          <tr>
-            <td style="font-size: 13px" x-text="result.filename"></td>
-            <td>
-              <span
-                class="cat-tag"
-                style="background: var(--gray-100); color: var(--gray-700)"
-                x-text="(result.filename.split('.').pop() || '').toUpperCase()"
-              ></span>
-            </td>
-            <td>
-              <span
-                class="badge"
-                :class="'badge-' + result.status"
-                x-text="result.status"
-              ></span>
-            </td>
-            <td x-text="result.transactions_count || '—'"></td>
-            <td
-              x-text="result.pages_parsed ? result.pages_parsed + ' / ' + result.pages_total : '—'"
-            ></td>
-            <td>
-              <small
-                x-text="result.error || (result.pages_parsed ? '&#10003; OK' : '')"
-              ></small>
-              <div
-                x-show="result.errors && result.errors.length > 0"
-                style="font-size: 11px; color: var(--amber)"
-              >
-                <template x-for="error in result.errors">
-                  <div>
-                    p.<span x-text="error.page"></span>:
-                    <span x-text="error.reason"></span>
-                  </div>
+        <!-- File list -->
+        <div x-show="files.length > 0" style="margin-top:20px;">
+            <div class="section-title">Files to upload (<span x-text="files.length"></span>)</div>
+            <div style="background:var(--gray-50); border:1px solid var(--border); border-radius:var(--radius); max-height:220px; overflow-y:auto;">
+                <template x-for="(file, idx) in files" :key="idx">
+                    <div style="padding:10px 14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span style="font-size:13px; font-weight:500;" x-text="file.name"></span>
+                            <span class="text-xs text-muted" style="margin-left:8px;" x-text="formatSize(file.size)"></span>
+                        </div>
+                        <button type="button" class="secondary" style="padding:3px 10px; font-size:11px;" @click="removeFile(idx)">Remove</button>
+                    </div>
                 </template>
-              </div>
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
+            </div>
+        </div>
 
-    <div style="margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap">
-      <button @click="goToTransactions()">View Transactions &rsaquo;</button>
-      <button @click="goToAnalysis()" class="secondary">
-        View Analysis &rsaquo;
-      </button>
+        <!-- Upload button -->
+        <div style="margin-top:20px;">
+            <button
+                @click="uploadFiles()"
+                :disabled="files.length === 0 || uploading || processing"
+                style="width:100%; padding:12px; font-size:15px; justify-content:center;"
+            >
+                <span x-show="!uploading && !processing">&#8593; Upload <span x-text="files.length"></span> file<span x-show="files.length !== 1">s</span></span>
+                <span x-show="uploading"><span class="loading"></span>&nbsp; Uploading…</span>
+                <span x-show="!uploading && processing"><span class="loading"></span>&nbsp; Processing statements…</span>
+            </button>
+        </div>
+
+        <!-- Message -->
+        <div x-show="message" class="alert" :class="'alert-' + messageType" style="margin-top:16px;">
+            <span x-text="message"></span>
+        </div>
     </div>
-  </div>
+
+    <!-- Upload results -->
+    <div x-show="results.length > 0" class="card" style="margin-top:0;">
+        <h3>Upload Results</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Format</th>
+                    <th>Status</th>
+                    <th>Transactions</th>
+                    <th>Currency</th>
+                    <th>Extraction</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="result in results" :key="result.filename">
+                    <tr>
+                        <td style="font-size:13px;" x-text="result.filename"></td>
+                        <td>
+                            <span class="cat-tag" style="background:var(--gray-100); color:var(--gray-700);"
+                                  x-text="(result.filename.split('.').pop() || '').toUpperCase()"></span>
+                        </td>
+                        <td>
+                            <span class="badge" :class="'badge-' + result.status" x-text="result.status"></span>
+                        </td>
+                        <td x-text="result.transactions_count || '—'"></td>
+                        <td>
+                            <span x-show="result.currency" class="cat-tag" style="background:var(--primary-light);color:var(--primary-dark);" x-text="result.currency"></span>
+                            <span x-show="!result.currency" class="text-xs text-muted">—</span>
+                        </td>
+                        <td><span class="text-xs text-muted" x-text="result.extraction_method || '—'"></span></td>
+                        <td>
+                            <small x-text="result.error || (result.pages_parsed ? '&#10003; OK' : '')"></small>
+                            <div x-show="result.errors && result.errors.length > 0" style="font-size:11px; color:var(--amber);">
+                                <template x-for="error in result.errors">
+                                    <div x-show="!error.reason.startsWith('ocr_completed')">p.<span x-text="error.page"></span>: <span x-text="error.reason"></span></div>
+                                </template>
+                            </div>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+
+        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button @click="goToTransactions()">View Transactions &rsaquo;</button>
+            <button @click="goToAnalysis()" class="secondary">View Analysis &rsaquo;</button>
+        </div>
+    </div>
 </div>
 
 <script>
-  function uploadPage() {
+function uploadPage() {
     return {
-      files: [],
-      results: [],
-      uploading: false,
-      processing: false,
-      dragActive: false,
-      message: "",
-      messageType: "success",
+        files: [],
+        results: [],
+        uploading: false,
+        processing: false,
+        dragActive: false,
+        message: '',
+        messageType: 'success',
 
-      handleFiles(e) {
-        this.files = Array.from(e.target.files);
-      },
+        handleFiles(e) {
+            this.files = Array.from(e.target.files);
+        },
 
-      handleDrop(e) {
-        this.dragActive = false;
-        this.files = Array.from(e.dataTransfer.files);
-      },
+        handleDrop(e) {
+            this.dragActive = false;
+            this.files = Array.from(e.dataTransfer.files);
+        },
 
-      removeFile(idx) {
-        this.files.splice(idx, 1);
-      },
+        removeFile(idx) {
+            this.files.splice(idx, 1);
+        },
 
-      formatSize(bytes) {
-        if (!bytes) return "";
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
-        return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-      },
+        formatSize(bytes) {
+            if (!bytes) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        },
 
-      async uploadFiles() {
-        if (this.files.length === 0) return;
-        this.uploading = true;
-        this.processing = false;
-        this.message = "";
-        this.results = [];
+        async uploadFiles() {
+            if (this.files.length === 0) return;
+            this.uploading = true;
+            this.processing = false;
+            this.message = '';
+            this.results = [];
 
-        const formData = new FormData();
-        this.files.forEach((file) => formData.append("files", file));
+            const formData = new FormData();
+            this.files.forEach(file => formData.append('files', file));
 
-        try {
-          const response = await fetch("/api/documents/upload", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          this.results = data.results;
+            try {
+                const response = await fetch('/api/documents/upload', { method: 'POST', body: formData });
+                const data = await response.json();
+                this.results = data.results;
 
-          const successful = data.results.filter(
-            (r) => r.status === "parsed" || r.status === "partial",
-          ).length;
-          this.message = `${successful} of ${data.results.length} file(s) ingested successfully.`;
-          this.messageType =
-            successful === data.results.length ? "success" : "warning";
+                const successful = data.results.filter(r => r.status === 'parsed' || r.status === 'partial').length;
+                this.message = `${successful} of ${data.results.length} file(s) ingested successfully.`;
+                this.messageType = successful === data.results.length ? 'success' : 'warning';
 
-          this.processing = true;
-          setTimeout(() => this.processAll(), 500);
-        } catch (error) {
-          this.message = "Upload failed: " + error.message;
-          this.messageType = "error";
-        } finally {
-          this.uploading = false;
-        }
-      },
+                this.processing = true;
+                setTimeout(() => this.processAll(), 500);
+            } catch (error) {
+                this.message = 'Upload failed: ' + error.message;
+                this.messageType = 'error';
+            } finally {
+                this.uploading = false;
+            }
+        },
 
-      async processAll() {
-        this.processing = true;
-        try {
-          const response = await fetch("/api/statements/process-all", {
-            method: "POST",
-          });
-          if (!response.ok) {
-            throw new Error(`Processing failed (${response.status})`);
-          }
-          this.message = "Statement processing complete.";
-          this.messageType = "success";
-        } catch (error) {
-          this.message = "Processing failed: " + error.message;
-          this.messageType = "error";
-          console.error("Processing error:", error);
-        } finally {
-          this.processing = false;
-        }
-      },
+        async processAll() {
+            this.processing = true;
+            try {
+                const response = await fetch('/api/statements/process-all', { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`Processing failed (${response.status})`);
+                }
+                this.message = 'Statement processing complete.';
+                this.messageType = 'success';
+            } catch (error) {
+                this.message = 'Processing failed: ' + error.message;
+                this.messageType = 'error';
+                console.error('Processing error:', error);
+            } finally {
+                this.processing = false;
+            }
+        },
 
-      goToTransactions() {
-        window.location.href = "/transactions";
-      },
-      goToAnalysis() {
-        window.location.href = "/analysis";
-      },
-    };
-  }
+        goToTransactions() { window.location.href = '/transactions'; },
+        goToAnalysis()     { window.location.href = '/analysis'; },
+    }
+}
 </script>
 {% endblock %}

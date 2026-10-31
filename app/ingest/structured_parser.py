@@ -1,10 +1,14 @@
 """CSV, Excel, and JSON statement parser using pandas"""
 import json
+import re
 import pandas as pd
 from decimal import Decimal
 from datetime import date
 from typing import Optional, List
-from app.ingest.normalize import normalize_date, normalize_amount, clean_description
+from app.ingest.normalize import (
+    normalize_date, normalize_amount, clean_description,
+    extract_currency_from_amount, KNOWN_ISO_CURRENCIES,
+)
 from app.ingest.pdf_parser import ParsedTransaction, ParsedStatement, PDFParseError
 
 
@@ -12,6 +16,30 @@ def _first_match(candidates: list, keywords: list) -> Optional[str]:
     for c in candidates:
         if any(kw in c.lower() for kw in keywords):
             return c
+    return None
+
+
+def _currency_from_headers(columns: dict, df: pd.DataFrame) -> Optional[str]:
+    """
+    Try to infer a statement-level currency from column headers or the first few data rows.
+    Returns ISO 3-letter code or None. Never guesses — only explicit symbols/codes.
+    """
+    # Check column header names for embedded currency
+    for col_name in df.columns:
+        c = extract_currency_from_amount(str(col_name))
+        if c:
+            return c
+
+    # Sample the first 10 non-null amount values across debit/credit/balance columns
+    for col_key in ('debit', 'credit', 'balance'):
+        col = columns.get(col_key)
+        if not col:
+            continue
+        for val in df[col].dropna().head(10):
+            c = extract_currency_from_amount(str(val))
+            if c:
+                return c
+
     return None
 
 
@@ -73,9 +101,10 @@ def _infer_opening_closing(statement: ParsedStatement) -> None:
     statement.closing_balance = txns[-1].balance
 
 
-def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement) -> None:
+def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement, source_type: str = "csv") -> None:
     """Shared row-extraction logic for CSV/Excel/JSON (all become a DataFrame)."""
     statement.pages_total = 1
+    statement.extraction_method = source_type
 
     if df.empty:
         statement.errors.append(PDFParseError(1, "empty_file"))
@@ -86,16 +115,30 @@ def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement) -> None:
         statement.errors.append(PDFParseError(1, "missing_required_columns"))
         return
 
+    # Statement-level currency: try headers first, then row samples
+    statement.currency = _currency_from_headers(columns, df)
+
     for idx, row in df.iterrows():
         try:
             txn_date = normalize_date(row[columns['date']])
             description = clean_description(row[columns['description']])
+
+            raw_debit = str(row[columns['debit']]) if columns['debit'] else None
+            raw_credit = str(row[columns['credit']]) if columns['credit'] else None
+
             debit = normalize_amount(row[columns['debit']]) if columns['debit'] else None
             credit = normalize_amount(row[columns['credit']]) if columns['credit'] else None
             balance = normalize_amount(row[columns['balance']]) if columns['balance'] else None
 
             if not any([debit, credit]):
-                continue  # Skip rows with no amount
+                continue
+
+            # Per-row currency: row-level symbol overrides statement-level
+            row_currency = (
+                extract_currency_from_amount(raw_debit)
+                or extract_currency_from_amount(raw_credit)
+                or statement.currency
+            )
 
             statement.transactions.append(ParsedTransaction(
                 txn_date=txn_date,
@@ -106,10 +149,13 @@ def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement) -> None:
                 raw_text=str(row.to_dict()),
                 page=1,
                 row_index=idx + 1,
+                currency=row_currency,
+                raw_debit=raw_debit,
+                raw_credit=raw_credit,
             ))
 
         except (ValueError, KeyError):
-            continue  # Skip malformed rows
+            continue
 
     statement.pages_parsed = 1 if statement.transactions else 0
     _infer_opening_closing(statement)
@@ -120,7 +166,7 @@ def parse_csv(file_path: str) -> ParsedStatement:
     statement = ParsedStatement()
     try:
         df = pd.read_csv(file_path)
-        _parse_dataframe(df, statement)
+        _parse_dataframe(df, statement, source_type="csv")
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"csv_read_error: {str(e)}"))
     return statement
@@ -131,7 +177,7 @@ def parse_excel(file_path: str) -> ParsedStatement:
     statement = ParsedStatement()
     try:
         df = pd.read_excel(file_path, sheet_name=0)
-        _parse_dataframe(df, statement)
+        _parse_dataframe(df, statement, source_type="excel")
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"excel_read_error: {str(e)}"))
     return statement
@@ -139,8 +185,8 @@ def parse_excel(file_path: str) -> ParsedStatement:
 
 def parse_json(file_path: str) -> ParsedStatement:
     """
-    Parse JSON statement: a JSON array of transaction objects, e.g.
-    [{"date": "...", "narration": "...", "amount": -850.0}, ...]
+    Parse JSON statement: a JSON array of transaction objects or
+    {"transactions": [...], "currency": "USD", ...} envelope.
     Field names are detected the same fuzzy way as CSV/Excel headers.
     """
     statement = ParsedStatement()
@@ -148,13 +194,26 @@ def parse_json(file_path: str) -> ParsedStatement:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        records = data.get("transactions", data) if isinstance(data, dict) else data
+        # Support envelope with metadata
+        if isinstance(data, dict):
+            # Extract statement-level metadata from envelope
+            if data.get("currency"):
+                statement.currency = str(data["currency"]).strip().upper()
+            records = data.get("transactions", data)
+        else:
+            records = data
+
         if not isinstance(records, list):
             statement.errors.append(PDFParseError(1, "unrecognized_json_structure"))
             return statement
 
         df = pd.json_normalize(records)
-        _parse_dataframe(df, statement)
+        _parse_dataframe(df, statement, source_type="json")
+
+        # JSON envelope currency overrides header-detected currency (more authoritative)
+        if isinstance(data, dict) and data.get("currency"):
+            statement.currency = str(data["currency"]).strip().upper()
+
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"json_read_error: {str(e)}"))
     return statement

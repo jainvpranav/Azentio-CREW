@@ -3,7 +3,7 @@ import pdfplumber
 import re
 from decimal import Decimal
 from datetime import date
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 from app.ingest.normalize import normalize_date, normalize_amount, clean_description
 
 
@@ -24,6 +24,9 @@ class ParsedTransaction:
         raw_text: str = "",
         page: int = 0,
         row_index: int = 0,
+        currency: Optional[str] = None,
+        raw_debit: Optional[str] = None,
+        raw_credit: Optional[str] = None,
     ):
         self.txn_date = txn_date
         self.description = description
@@ -33,6 +36,9 @@ class ParsedTransaction:
         self.raw_text = raw_text
         self.page = page
         self.row_index = row_index
+        self.currency = currency
+        self.raw_debit = raw_debit
+        self.raw_credit = raw_credit
 
 
 class ParsedStatement:
@@ -49,6 +55,9 @@ class ParsedStatement:
         errors: Optional[List[PDFParseError]] = None,
         pages_parsed: int = 0,
         pages_total: int = 0,
+        currency: Optional[str] = None,
+        extraction_method: str = "unknown",
+        ocr_confidence: Optional[float] = None,
     ):
         self.account_number = account_number
         self.holder_name = holder_name
@@ -61,17 +70,61 @@ class ParsedStatement:
         self.errors = errors or []
         self.pages_parsed = pages_parsed
         self.pages_total = pages_total
+        self.currency = currency
+        self.extraction_method = extraction_method
+        self.ocr_confidence = ocr_confidence
+
+
+def _try_ocr_page(page, page_num: int) -> Tuple[List[ParsedTransaction], Optional[float]]:
+    """
+    Attempt to OCR a scanned PDF page.
+    Returns (transactions, avg_confidence). Returns ([], None) if OCR is unavailable.
+    """
+    try:
+        from app.ingest.ocr_parser import OCR_AVAILABLE, ocr_pil_image, parse_ocr_text
+    except ImportError:
+        return [], None
+
+    if not OCR_AVAILABLE:
+        return [], None
+
+    pil_image = None
+
+    # Try pdfplumber's built-in page rendering (needs Wand/ImageMagick)
+    try:
+        rendered = page.to_image(resolution=200)
+        pil_image = rendered.original
+    except Exception:
+        pass
+
+    if pil_image is None:
+        # Try pdf2image as fallback
+        try:
+            import pdf2image
+            images = pdf2image.convert_from_path(
+                page.pdf.stream.name, first_page=page_num, last_page=page_num, dpi=200
+            )
+            if images:
+                pil_image = images[0]
+        except Exception:
+            pass
+
+    if pil_image is None:
+        return [], None
+
+    text, confidence = ocr_pil_image(pil_image)
+    txns = parse_ocr_text(text, page=page_num) if text else []
+    return txns, confidence
 
 
 def parse_pdf(file_path: str) -> ParsedStatement:
     """
     Parse PDF bank statement.
-
-    Currently supports basic table extraction.
-    Extend for layout-specific parsers (Layout A, Layout B from BUILD_PLAN).
+    Tries native text extraction first; falls back to OCR for scanned pages.
     """
-
-    statement = ParsedStatement()
+    statement = ParsedStatement(extraction_method="native_pdf")
+    ocr_confidences = []
+    pages_ocr_used = 0
 
     try:
         with pdfplumber.open(file_path) as pdf:
@@ -80,15 +133,26 @@ def parse_pdf(file_path: str) -> ParsedStatement:
             for page_num, page in enumerate(pdf.pages):
                 page_num_1indexed = page_num + 1
 
-                # Check if page has text
                 text = page.extract_text()
                 if not text:
-                    statement.errors.append(
-                        PDFParseError(page_num_1indexed, "no_text_layer_scanned_page")
-                    )
+                    # Scanned page — attempt OCR fallback
+                    ocr_txns, confidence = _try_ocr_page(page, page_num_1indexed)
+                    if ocr_txns:
+                        statement.transactions.extend(ocr_txns)
+                        statement.pages_parsed += 1
+                        pages_ocr_used += 1
+                        if confidence is not None:
+                            ocr_confidences.append(confidence)
+                        statement.errors.append(
+                            PDFParseError(page_num_1indexed,
+                                          f"scanned_page_ocr_used (confidence: {confidence:.0f}%)" if confidence else "scanned_page_ocr_used")
+                        )
+                    else:
+                        statement.errors.append(
+                            PDFParseError(page_num_1indexed, "no_text_layer_scanned_page")
+                        )
                     continue
 
-                # Try to extract table
                 tables = page.extract_tables()
                 if not tables:
                     statement.errors.append(
@@ -96,23 +160,18 @@ def parse_pdf(file_path: str) -> ParsedStatement:
                     )
                     continue
 
-                # Extract transactions from table
                 for table in tables:
                     if not table:
                         continue
 
-                    # Assume first row is header, skip it
                     for row_idx, row in enumerate(table[1:], 1):
                         try:
-                            # Simple extraction: assumes table columns are
-                            # [date, description, debit, credit, balance]
-                            # Adjust based on actual bank statement format
-
                             if len(row) < 4:
                                 continue
 
-                            # This is a placeholder - real parsers would handle
-                            # multiple column orders and formats
+                            raw_debit = str(row[2]) if row[2] else None
+                            raw_credit = str(row[3]) if row[3] else None
+
                             txn_date = normalize_date(row[0])
                             description = clean_description(row[1])
                             debit = normalize_amount(row[2])
@@ -120,7 +179,11 @@ def parse_pdf(file_path: str) -> ParsedStatement:
                             balance = normalize_amount(row[4]) if len(row) > 4 else None
 
                             if not any([debit, credit]):
-                                continue  # Skip rows with no amount
+                                continue
+
+                            from app.ingest.normalize import extract_currency_from_amount
+                            currency = (extract_currency_from_amount(raw_debit)
+                                        or extract_currency_from_amount(raw_credit))
 
                             txn = ParsedTransaction(
                                 txn_date=txn_date,
@@ -131,11 +194,13 @@ def parse_pdf(file_path: str) -> ParsedStatement:
                                 raw_text=" | ".join(str(c) for c in row),
                                 page=page_num_1indexed,
                                 row_index=row_idx,
+                                currency=currency,
+                                raw_debit=raw_debit,
+                                raw_credit=raw_credit,
                             )
                             statement.transactions.append(txn)
 
-                        except (ValueError, IndexError) as e:
-                            # Skip malformed rows
+                        except (ValueError, IndexError):
                             continue
 
                 if len(statement.transactions) > 0 or not tables:
@@ -143,5 +208,13 @@ def parse_pdf(file_path: str) -> ParsedStatement:
 
     except Exception as e:
         statement.errors.append(PDFParseError(1, f"pdf_read_error: {str(e)}"))
+
+    if pages_ocr_used > 0:
+        if pages_ocr_used == statement.pages_total:
+            statement.extraction_method = "ocr_pdf"
+        else:
+            statement.extraction_method = "native_and_ocr_pdf"
+        if ocr_confidences:
+            statement.ocr_confidence = sum(ocr_confidences) / len(ocr_confidences)
 
     return statement

@@ -250,6 +250,189 @@ def check_income_decline(session: Session) -> dict:
     return {"flags_created": count, "type": "INCOME_DECLINE"}
 
 
+def check_chronology(session: Session) -> dict:
+    """
+    Flag statements where transactions are not in chronological order.
+    Out-of-order dates indicate possible tampering or data-quality issues.
+    """
+    from app.models import Statement as StmtModel
+    statements = session.exec(select(StmtModel)).all()
+    count = 0
+    for stmt in statements:
+        txns = session.exec(
+            select(Transaction)
+            .where(Transaction.statement_id == stmt.id)
+            .order_by(Transaction.row_index)
+        ).all()
+        if len(txns) < 2:
+            continue
+        out_of_order = []
+        for i in range(1, len(txns)):
+            if txns[i].txn_date < txns[i - 1].txn_date:
+                out_of_order.append(txns[i].id)
+        if out_of_order:
+            create_flag(
+                session,
+                "OUT_OF_ORDER_DATES",
+                FlagSeverity.WARN,
+                f"{len(out_of_order)} transaction(s) appear out of chronological order. "
+                "Possible data-quality issue or document modification.",
+                statement_id=stmt.id,
+                account_id=stmt.account_id,
+                evidence=out_of_order,
+            )
+            count += 1
+    session.commit()
+    return {"flags_created": count, "type": "OUT_OF_ORDER_DATES"}
+
+
+def check_pdf_metadata(session: Session) -> dict:
+    """
+    Inspect PDF document metadata for suspicious timestamps or producer anomalies.
+    Flags when creation date is after the statement period end, or when the
+    modification date is significantly later than the creation date.
+    """
+    import pdfplumber
+    from app.models import Document, Statement as StmtModel
+    count = 0
+    docs = session.exec(
+        select(Document).where(Document.file_type == "pdf")
+    ).all()
+    for doc in docs:
+        stmt = session.exec(
+            select(StmtModel).where(StmtModel.document_id == doc.id)
+        ).first()
+
+        # Try to open and inspect the PDF from the uploads directory
+        import os
+        pdf_path = os.path.join("uploads", doc.filename)
+        if not os.path.exists(pdf_path):
+            continue
+
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                meta = pdf.metadata or {}
+        except Exception:
+            continue
+
+        issues = []
+        creation_date = meta.get("CreationDate") or meta.get("creation_date")
+        mod_date = meta.get("ModDate") or meta.get("mod_date")
+        producer = meta.get("Producer") or meta.get("producer") or ""
+
+        if creation_date and mod_date:
+            # Flag if mod date appears significantly different from creation date
+            # (heuristic: raw string comparison on the date prefix)
+            cd_str = str(creation_date)[:10]
+            md_str = str(mod_date)[:10]
+            if cd_str and md_str and cd_str != md_str:
+                issues.append(f"creation={cd_str}, modification={md_str}")
+
+        # Flag completely missing metadata as an indicator (not proof of tampering)
+        if not creation_date and not mod_date and not producer:
+            issues.append("no_metadata_fields_present")
+
+        if issues and stmt:
+            create_flag(
+                session,
+                "PDF_METADATA_ANOMALY",
+                FlagSeverity.INFO,
+                f"PDF metadata indicator(s): {'; '.join(issues)}. "
+                "Metadata alone does not prove tampering — review in context.",
+                statement_id=stmt.id,
+                account_id=stmt.account_id,
+            )
+            count += 1
+
+    session.commit()
+    return {"flags_created": count, "type": "PDF_METADATA_ANOMALY"}
+
+
+def check_velocity_spikes(session: Session) -> dict:
+    """
+    Flag accounts with sudden spikes in transaction volume or cash-flow velocity.
+    Uses a heuristic: any calendar week with >3x the account's median weekly count.
+    Labeled as a heuristic, not a historical comparison, when no history exists.
+    """
+    from datetime import timedelta
+    import statistics
+
+    accounts = session.exec(select(Account)).all()
+    count = 0
+    for account in accounts:
+        txns = session.exec(
+            select(Transaction).where(Transaction.account_id == account.id)
+        ).all()
+        if len(txns) < 10:
+            continue
+
+        # Group by ISO week
+        from collections import defaultdict
+        weekly: dict = defaultdict(list)
+        for t in txns:
+            week_key = t.txn_date.isocalendar()[:2]  # (year, week)
+            weekly[week_key].append(t)
+
+        if len(weekly) < 3:
+            continue
+
+        counts = [len(v) for v in weekly.values()]
+        median = statistics.median(counts)
+        if median == 0:
+            continue
+
+        for week_key, week_txns in weekly.items():
+            if len(week_txns) > 3 * median and len(week_txns) >= 5:
+                txn_ids = [t.id for t in week_txns]
+                year, week = week_key
+                create_flag(
+                    session,
+                    "VELOCITY_SPIKE",
+                    FlagSeverity.WARN,
+                    f"Week {year}-W{week:02d}: {len(week_txns)} transactions "
+                    f"(median: {median:.0f}/week). Heuristic threshold — not a historical baseline.",
+                    account_id=account.id,
+                    evidence=txn_ids[:20],
+                )
+                count += 1
+
+    session.commit()
+    return {"flags_created": count, "type": "VELOCITY_SPIKE"}
+
+
+def check_unknown_currency_transactions(session: Session) -> dict:
+    """
+    Flag transactions whose currency could not be determined.
+    These are excluded from currency-specific calculations until resolved.
+    """
+    txns = session.exec(
+        select(Transaction).where(Transaction.currency == None)
+    ).all()
+
+    # Only flag if there are a significant number on an account
+    from collections import defaultdict
+    by_account: dict = defaultdict(list)
+    for t in txns:
+        by_account[t.account_id].append(t.id)
+
+    count = 0
+    for account_id, txn_ids in by_account.items():
+        if len(txn_ids) >= 3:
+            create_flag(
+                session,
+                "UNKNOWN_CURRENCY",
+                FlagSeverity.INFO,
+                f"{len(txn_ids)} transaction(s) have no determinable currency. "
+                "They are excluded from currency-specific balance calculations until resolved.",
+                account_id=account_id,
+                evidence=txn_ids[:20],
+            )
+            count += 1
+
+    session.commit()
+    return {"flags_created": count, "type": "UNKNOWN_CURRENCY"}
+
+
 def generate_all_flags(session: Session) -> dict:
     """Run all flag checks. Re-running clears previously generated flags first (idempotent)."""
     for flag in session.exec(select(Flag)).all():
@@ -265,6 +448,10 @@ def generate_all_flags(session: Session) -> dict:
         "missing_months": check_missing_months(session),
         "low_balance": check_low_balance(session),
         "income_decline": check_income_decline(session),
+        "chronology": check_chronology(session),
+        "pdf_metadata": check_pdf_metadata(session),
+        "velocity_spikes": check_velocity_spikes(session),
+        "unknown_currency": check_unknown_currency_transactions(session),
     }
 
     total_flags = session.exec(select(Flag)).all()

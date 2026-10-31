@@ -43,5 +43,8 @@ def parse_statement(file_path: str, file_type: str) -> ParsedStatement:
         return structured_parser.parse_excel(file_path)
     elif file_type == "json":
         return structured_parser.parse_json(file_path)
+    elif file_type in ("png", "jpg", "jpeg"):
+        from app.ingest.ocr_parser import parse_image
+        return parse_image(file_path)
     else:
         raise ValueError(f"Unsupported file type: {file_type}")

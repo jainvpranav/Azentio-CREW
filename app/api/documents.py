@@ -50,6 +50,8 @@ async def upload_documents(
                 file_type = "xlsx"
             elif file_ext == "json":
                 file_type = "json"
+            elif file_ext in ["png", "jpg", "jpeg"]:
+                file_type = file_ext
             else:
                 results.append({
                     "filename": file_name,
@@ -99,8 +101,12 @@ async def upload_documents(
                     session.commit()
                     session.refresh(account)
 
-                # Create Document
-                doc_status = DocumentStatus.PARSED if not parsed.errors else DocumentStatus.PARTIAL
+                # Determine parse success: OCR diagnostics are not errors
+                real_errors = [
+                    e for e in parsed.errors
+                    if not e.reason.startswith("ocr_completed")
+                ]
+                doc_status = DocumentStatus.PARSED if not real_errors else DocumentStatus.PARTIAL
                 document = Document(
                     filename=file_name,
                     file_type=file_type,
@@ -108,7 +114,9 @@ async def upload_documents(
                     status=doc_status,
                     pages_total=parsed.pages_total,
                     pages_parsed=parsed.pages_parsed,
-                    errors=json.dumps([{"page": e.page, "reason": e.reason} for e in parsed.errors]) if parsed.errors else None
+                    errors=json.dumps([{"page": e.page, "reason": e.reason} for e in parsed.errors]) if parsed.errors else None,
+                    extraction_method=getattr(parsed, "extraction_method", None),
+                    ocr_confidence=getattr(parsed, "ocr_confidence", None),
                 )
                 session.add(document)
                 session.commit()
@@ -116,6 +124,17 @@ async def upload_documents(
 
                 # Create Statement
                 if parsed.transactions:
+                    # Determine statement currency: use declared, else infer from majority of txns
+                    stmt_currency = getattr(parsed, "currency", None)
+                    if not stmt_currency:
+                        currencies = [
+                            t.currency for t in parsed.transactions if getattr(t, "currency", None)
+                        ]
+                        if currencies:
+                            from collections import Counter
+                            most_common = Counter(currencies).most_common(1)[0][0]
+                            stmt_currency = most_common if Counter(currencies)[most_common] > len(currencies) * 0.8 else None
+
                     statement = Statement(
                         document_id=document.id,
                         account_id=account.id,
@@ -123,6 +142,7 @@ async def upload_documents(
                         period_end=parsed.period_end or parsed.transactions[-1].txn_date,
                         opening_balance=parsed.opening_balance,
                         closing_balance=parsed.closing_balance,
+                        currency=stmt_currency,
                     )
                     session.add(statement)
                     session.commit()
@@ -148,6 +168,9 @@ async def upload_documents(
                             reference_number=meta["reference_number"],
                             counterparty=meta["counterparty"],
                             counterparty_account=meta["counterparty_account"],
+                            currency=getattr(parsed_txn, "currency", None) or stmt_currency,
+                            raw_debit=getattr(parsed_txn, "raw_debit", None),
+                            raw_credit=getattr(parsed_txn, "raw_credit", None),
                         )
                         session.add(txn)
                     session.commit()
@@ -159,7 +182,9 @@ async def upload_documents(
                     "transactions_count": len(parsed.transactions),
                     "pages_parsed": parsed.pages_parsed,
                     "pages_total": parsed.pages_total,
-                    "errors": parsed.errors if parsed.errors else []
+                    "extraction_method": getattr(parsed, "extraction_method", None),
+                    "currency": getattr(parsed, "currency", None),
+                    "errors": [{"page": e.page, "reason": e.reason} for e in parsed.errors] if parsed.errors else [],
                 })
 
             finally:
@@ -189,6 +214,8 @@ def list_documents(session: Session = Depends(get_session)):
             pages_total=doc.pages_total,
             pages_parsed=doc.pages_parsed,
             errors=json.loads(doc.errors) if doc.errors else None,
+            extraction_method=doc.extraction_method,
+            ocr_confidence=doc.ocr_confidence,
         )
         for doc in documents
     ]
@@ -209,4 +236,6 @@ def get_document(doc_id: int, session: Session = Depends(get_session)):
         pages_total=doc.pages_total,
         pages_parsed=doc.pages_parsed,
         errors=json.loads(doc.errors) if doc.errors else None,
+        extraction_method=doc.extraction_method,
+        ocr_confidence=doc.ocr_confidence,
     )

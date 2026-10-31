@@ -1,7 +1,30 @@
 """Normalize dates, amounts, and descriptions"""
 from decimal import Decimal
 from datetime import date, datetime
+from typing import Optional, Tuple
 import re
+
+
+KNOWN_ISO_CURRENCIES = {
+    'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'INR', 'AUD', 'CAD', 'CHF',
+    'SGD', 'HKD', 'AED', 'MYR', 'THB', 'IDR', 'PHP', 'KRW', 'BRL',
+    'ZAR', 'NGN', 'KES', 'GHS', 'EGP', 'PKR', 'BDT', 'LKR', 'NPR',
+}
+
+# Ordered longest-first so 'C$' matches before '$', 'A$' before '$', etc.
+_CURRENCY_SYMBOLS = sorted([
+    ('₹', 'INR'), ('Rs.', 'INR'), ('Rs ', 'INR'), ('INR', 'INR'),
+    ('USD', 'USD'), ('$', 'USD'),
+    ('EUR', 'EUR'), ('€', 'EUR'),
+    ('GBP', 'GBP'), ('£', 'GBP'),
+    ('JPY', 'JPY'), ('¥', 'JPY'),
+    ('CNY', 'CNY'),
+    ('CAD', 'CAD'), ('C$', 'CAD'),
+    ('AUD', 'AUD'), ('A$', 'AUD'),
+    ('SGD', 'SGD'), ('S$', 'SGD'),
+    ('HKD', 'HKD'), ('HK$', 'HKD'),
+    ('AED', 'AED'),
+], key=lambda x: -len(x[0]))
 
 
 def normalize_date(value: str, day_first: bool = True) -> date:
@@ -35,6 +58,34 @@ def normalize_date(value: str, day_first: bool = True) -> date:
             continue
 
     raise ValueError(f"Cannot parse date: {value}")
+
+
+def extract_currency_from_amount(raw: str) -> Optional[str]:
+    """
+    Extract a currency code from a raw amount string (e.g. '₹1,250.00', '$1,250.00 USD').
+    Returns ISO 3-letter code or None when not present.
+    Never infers currency from context — only from explicit symbols/codes in the string.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    for symbol, code in _CURRENCY_SYMBOLS:
+        if symbol in s:
+            return code
+    m = re.search(r'\b([A-Z]{3})\b', s.upper())
+    if m and m.group(1) in KNOWN_ISO_CURRENCIES:
+        return m.group(1)
+    return None
+
+
+def normalize_amount_with_currency(value) -> Tuple[Optional[Decimal], Optional[str]]:
+    """
+    Like normalize_amount but also returns the currency code found in the string.
+    Returns (amount, currency_code); either may be None.
+    """
+    raw_str = str(value) if value is not None else None
+    currency = extract_currency_from_amount(raw_str) if raw_str else None
+    return normalize_amount(value), currency
 
 
 def normalize_amount(value) -> Decimal:
