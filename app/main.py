@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import create_db_and_tables, engine, get_session
 from app import models
-from app.api import documents, transactions
+from app.api import documents, transactions, statements
 
 
 # Create app
@@ -21,6 +21,7 @@ app.add_middleware(
 # Include routers
 app.include_router(documents.router)
 app.include_router(transactions.router)
+app.include_router(statements.router)
 
 # Initialize database
 @app.on_event("startup")
