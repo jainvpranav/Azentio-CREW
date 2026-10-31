@@ -161,6 +161,7 @@
           x-show="chartMonths.length > 0"
           style="
             display: flex;
+            flex-direction: column;
             align-items: flex-end;
             gap: 14px;
             height: 160px;
@@ -175,7 +176,7 @@
                 min-width: 40px;
                 flex: 1;
                 display: flex;
-                flex-direction: row;
+                flex-direction: column;
                 align-items: center;
                 gap: 4px;
               "
@@ -661,8 +662,14 @@
           }
 
           /* Load transaction count separately — large dataset, non-blocking */
-          fetch("/api/transactions/count").then(r => r.ok ? r.json() : null)
-            .then(d => { if (d) { this.transactionCount = d.total; this.duplicateCount = d.duplicates; } })
+          fetch("/api/transactions/count")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (d) {
+                this.transactionCount = d.total;
+                this.duplicateCount = d.duplicates;
+              }
+            })
             .catch(() => {});
         } finally {
           this.loading = false;
@@ -680,7 +687,9 @@
         const coverage = await coverageRes.json();
         this.coverageGrid = coverage.coverage_grid;
         if (trendRes.ok) {
-          try { this.balanceTrend = await trendRes.json(); } catch(e) {}
+          try {
+            this.balanceTrend = await trendRes.json();
+          } catch (e) {}
         }
       },
 

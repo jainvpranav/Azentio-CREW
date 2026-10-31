@@ -157,6 +157,20 @@ def write_scanned_page_pdf(path: str):
     c.save()
 
 
+def write_scanned_image_pdf(path: str, accent: str = "#5b6f94"):
+    """Second image-only PDF variant to exercise a second scanned page file."""
+    c = canvas.Canvas(path, pagesize=A4)
+    c.setFillColor(colors.HexColor(accent))
+    c.rect(70, 160, 180, 90, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor("#f6f8fb"))
+    c.rect(120, 280, 360, 240, fill=1, stroke=0)
+    c.setStrokeColor(colors.HexColor("#8ea0ba"))
+    for y in range(300, 500, 22):
+        c.line(150, y, 430, y)
+    c.showPage()
+    c.save()
+
+
 # ===================== structured files =====================
 
 def write_csv(path: str, rows: list, columns: dict):
@@ -252,6 +266,7 @@ def main():
 
     # ---- Scanned (unreadable) page ----
     write_scanned_page_pdf(os.path.join(OUTPUT_DIR, "bankB_scanned_page.pdf"))
+    write_scanned_image_pdf(os.path.join(OUTPUT_DIR, "bankB_scanned_image.pdf"))
 
     # ---- Broken balance ----
     broken_rows = write_broken_balance_pdf(

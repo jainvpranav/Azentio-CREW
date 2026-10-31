@@ -54,9 +54,16 @@ BANKA_LEDGER = [
     (date(2026, 8, 3), "NEFT TO OWN A/C MERIDIAN 5678", D("50000.00"), None, "INTERNAL_TRANSFER"),
     (date(2026, 8, 14), "SWIGGY ORDER 2217", D("700.00"), None, "OTHER_EXPENSE"),
     (date(2026, 8, 20), "BESCOM ELECTRICITY BILL", D("1450.00"), None, "UTILITIES"),
+    # September keeps the running six-month story and covers the reversal + bank-charge rules
+    (date(2026, 9, 2), "RAZORPAYX PAYROLL ACME", None, D("45000.00"), "SALARY"),
+    (date(2026, 9, 3), "NEFT TO OWN A/C MERIDIAN 5678", D("50000.00"), None, "INTERNAL_TRANSFER"),
+    (date(2026, 9, 10), "REVERSAL OF AMAZON ORDER 4521", None, D("2500.00"), "REVERSAL"),
+    (date(2026, 9, 14), "SWIGGY ORDER 3328", D("680.00"), None, "OTHER_EXPENSE"),
+    (date(2026, 9, 20), "BESCOM ELECTRICITY BILL", D("1450.00"), None, "UTILITIES"),
+    (date(2026, 9, 23), "GST ON BANK CHARGES", D("125.00"), None, "BANK_CHARGES"),
 ]
-BANKA_FILE1_RANGE = (date(2026, 4, 1), date(2026, 6, 30))   # bankA_savings_apr_jun.pdf
-BANKA_FILE2_RANGE = (date(2026, 6, 1), date(2026, 8, 31))   # bankA_savings_jun_aug.pdf (overlaps June)
+BANKA_FILE1_RANGE = (date(2026, 4, 1), date(2026, 9, 30))   # bankA_savings_apr_sep.pdf
+BANKA_FILE2_RANGE = (date(2026, 6, 1), date(2026, 9, 30))   # bankA_savings_jun_sep.pdf (overlaps June)
 
 # ---- Account B: Meridian current, Apr-Jun then Aug-Sep (July has no statement -> missing) ----
 BANKB_OPENING = D("30000.00")
@@ -91,6 +98,7 @@ BANKB_LEDGER = [
     (date(2026, 9, 20), "UPI CR FROM QUICKCART SOLUTIONS", None, D("40000.00"), "BUSINESS_RECEIPT"),
     (date(2026, 9, 22), "EMI PAYMENT LOAN8842", D("18450.00"), None, "LOAN_EMI"),
     (date(2026, 9, 25), "UPI CR FROM BRIGHT RETAIL", None, D("20000.00"), "BUSINESS_RECEIPT"),
+    (date(2026, 9, 28), "GST ON BANK CHARGES", D("150.00"), None, "BANK_CHARGES"),
 ]
 BANKB_FILE1_RANGE = (date(2026, 4, 1), date(2026, 6, 30))   # bankB_current_apr_jun.pdf
 BANKB_FILE2_RANGE = (date(2026, 8, 1), date(2026, 9, 30))   # bankB_current_aug_sep.pdf
