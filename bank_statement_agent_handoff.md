@@ -23,24 +23,24 @@ practical.
 Create and maintain these **two separate Markdown files** in the
 project:
 
-1.  `ASSUMPTIONS.md`
-    -   Record assumptions made because requirements, data or metadata
-        are incomplete.
-    -   For each assumption, include its ID, date, area, assumption,
-        reason, impact, confidence, and whether confirmation is needed.
-    -   Do not silently turn assumptions into facts.
-    -   Update this file whenever an implementation depends on an
-        assumption.
-2.  `DECISIONS.md`
-    -   Record implementation and product decisions actually taken.
-    -   For each decision, include its ID, date, context/problem,
-        options considered where useful, chosen decision, rationale,
-        consequences, and affected files/modules.
-    -   Record important changes to formulas, thresholds, schemas,
-        matching logic, model/provider choices and escalation policies.
-    -   Keep assumptions and decisions separate: an assumption is
-        something temporarily believed; a decision is a deliberate
-        choice made.
+1. `ASSUMPTIONS.md`
+   - Record assumptions made because requirements, data or metadata
+     are incomplete.
+   - For each assumption, include its ID, date, area, assumption,
+     reason, impact, confidence, and whether confirmation is needed.
+   - Do not silently turn assumptions into facts.
+   - Update this file whenever an implementation depends on an
+     assumption.
+2. `DECISIONS.md`
+   - Record implementation and product decisions actually taken.
+   - For each decision, include its ID, date, context/problem,
+     options considered where useful, chosen decision, rationale,
+     consequences, and affected files/modules.
+   - Record important changes to formulas, thresholds, schemas,
+     matching logic, model/provider choices and escalation policies.
+   - Keep assumptions and decisions separate: an assumption is
+     something temporarily believed; a decision is a deliberate
+     choice made.
 
 Link to or reference these files in the project README or main developer
 documentation. Do not combine them into one file.
@@ -50,16 +50,16 @@ documentation. Do not combine them into one file.
 A simple rule-based engine already exists. Begin with repository
 inspection:
 
-1.  Identify language, framework, database, API structure and
-    application entry points.
-2.  Find transaction schemas, extraction/normalization code,
-    classification rules and metric calculations.
-3.  Identify which of the six categories, metrics and anomaly rules
-    already exist.
-4.  Note existing tests, frontend integration and LLM/RAG components.
-5.  Produce a concise gap analysis and proposed implementation sequence
-    before major changes.
-6.  Create `ASSUMPTIONS.md` and `DECISIONS.md` as described above.
+1. Identify language, framework, database, API structure and
+   application entry points.
+2. Find transaction schemas, extraction/normalization code,
+   classification rules and metric calculations.
+3. Identify which of the six categories, metrics and anomaly rules
+   already exist.
+4. Note existing tests, frontend integration and LLM/RAG components.
+5. Produce a concise gap analysis and proposed implementation sequence
+   before major changes.
+6. Create `ASSUMPTIONS.md` and `DECISIONS.md` as described above.
 
 Do not claim a feature is missing until the codebase has been inspected.
 Do not break working functionality.
@@ -69,16 +69,16 @@ Do not break working functionality.
 Normalize statement rows into a common structure. Reuse the existing
 schema if suitable; otherwise ensure the model can represent:
 
--   `transaction_id`, `customer_id`, `account_number`
--   `date` (and time when available)
--   `description` (preserve original narration)
--   `debit`, `credit`, `balance`
--   `transaction_type`
--   `counterparty` and `counterparty_account` when available
--   `reference_number` (UTR, bank reference, RRN or equivalent)
--   `category`, `subcategory`, `classification_confidence`
--   `linked_transaction_id` / original transaction link where relevant
--   `source_file`, `source_page` and provenance metadata
+- `transaction_id`, `customer_id`, `account_number`
+- `date` (and time when available)
+- `description` (preserve original narration)
+- `debit`, `credit`, `balance`
+- `transaction_type`
+- `counterparty` and `counterparty_account` when available
+- `reference_number` (UTR, bank reference, RRN or equivalent)
+- `category`, `subcategory`, `classification_confidence`
+- `linked_transaction_id` / original transaction link where relevant
+- `source_file`, `source_page` and provenance metadata
 
 Preserve raw source values. Keep derived classifications separate from
 original statement data. Support missing fields without fabricating
@@ -197,14 +197,14 @@ missing data as zero.
 
 ### Individual metrics
 
-**Verified Net Monthly Income (VNMI)**\
+**Verified Net Monthly Income (VNMI)**
 Average monthly verified recurring primary income over the available
 lookback. Include supported salary and other verified primary income.
 Exclude internal transfers, refunds/reversals, loan disbursements and
 unverified credits. Distinguish regular income from exceptional bonuses
 where possible.
 
-**Net Average Monthly Balance (NAMB)**\
+**Net Average Monthly Balance (NAMB)**
 Prefer average daily closing balance: sum of daily closing balances
 divided by number of days. Reconstruct daily balances only when opening
 balance and transaction sequence are reliable. State whether calculation
@@ -212,22 +212,22 @@ is per account or consolidated across linked accounts. Do not substitute
 month-end balance for average daily balance without labelling it as an
 approximation.
 
-**FOIR / DTI**\
-`(Monthly fixed debt obligations / VNMI) * 100`\
+**FOIR / DTI**
+`(Monthly fixed debt obligations / VNMI) * 100`
 Include identifiable EMI and other recurring debt obligations. Handle
 credit-card obligations carefully: do not double-count card purchases
 and card bill payments. If the actual obligation cannot be established,
 disclose the limitation.
 
-**Salary-to-Obligation Cleansing Cycle**\
+**Salary-to-Obligation Cleansing Cycle**
 Measure days from salary credit to clearance of recurring obligations
 and/or the time until balance falls below a configurable low-balance
 threshold. Report salary date, obligation dates, post-obligation balance
 and time to low balance. Do not assume a low balance alone proves
 distress.
 
-**Discretionary Spending Ratio**\
-`(Eligible discretionary outflows / Total eligible monthly outflows) * 100`\
+**Discretionary Spending Ratio**
+`(Eligible discretionary outflows / Total eligible monthly outflows) * 100`
 Potential discretionary categories include dining, entertainment,
 shopping, travel and non-essential subscriptions. Exclude internal
 transfers and avoid double-counting refunds. Keep unknown expenses
@@ -235,46 +235,46 @@ unclassified rather than forcing a category.
 
 ### SME metrics
 
-**Gross Banking Turnover (GBT)**\
+**Gross Banking Turnover (GBT)**
 Sum eligible verified business credit inflows over the period. Exclude
 internal transfers, refunds/reversals, loan disbursements and
 unverified/non-business credits. Distinguish verified business turnover
 from total account credits.
 
-**Debt Service Coverage Ratio (DSCR)**\
-`Net Operating Cash Flow / Total Debt Service`\
+**Debt Service Coverage Ratio (DSCR)**
+`Net Operating Cash Flow / Total Debt Service`
 Estimate operating cash flow from eligible operating inflows less
 eligible operating outflows. Debt service includes principal and
 interest. If principal/interest cannot be separated, disclose the
 approximation and its limitations.
 
-**Customer Concentration Risk**\
+**Customer Concentration Risk**
 Calculate top-one and top-three customer shares: customer inflows
 divided by total verified business inflows. Use identifiable
 counterparties; exclude own-account transfers and unverified credits.
 
-**CC/OD Utilization**\
-`Average Drawn Balance / Sanctioned Credit Limit * 100`\
+**CC/OD Utilization**
+`Average Drawn Balance / Sanctioned Credit Limit * 100`
 Requires account/facility type, sanctioned limit and relevant balance
 data. Do not infer or invent a sanctioned limit from transaction swings.
 If missing, return `NOT_AVAILABLE` and identify required metadata.
 
-**Trade Inflow-to-Outflow Ratio**\
-`Verified Business Receipts / Verified Business Payables * 100`\
+**Trade Inflow-to-Outflow Ratio**
+`Verified Business Receipts / Verified Business Payables * 100`
 Identify customer receipts and supplier/payable outflows. Exclude
 internal transfers and unrelated personal expenses. Define treatment
 when payables are zero or unavailable.
 
 ## Phase 3 --- Red-flag metrics
 
-**NSF / Bounce Counter**\
+**NSF / Bounce Counter**
 Identify failed payments using narration such as NSF, Bounce,
 Insufficient Funds, NACH Return, ECS Return and ACH Return. Link
 debit/reversal events where possible to avoid double-counting one
 failure. Report total and monthly counts, lender/payee and supporting
 transaction IDs.
 
-**Round-tripping / possible circular flow**\
+**Round-tripping / possible circular flow**
 Look for rapid outgoing and incoming flows with matching/near-matching
 amounts, repeated movements among counterparties/accounts, and possible
 circular paths within configurable windows (initially consider 24--48
@@ -282,7 +282,7 @@ hours). Exclude verified own-account transfers and legitimate
 refunds/reversals where matched. Label as `POSSIBLE_CIRCULAR_FLOW` or
 equivalent; never assert money laundering from a pattern alone.
 
-**End-of-Day (EOD) Balance Stress**\
+**End-of-Day (EOD) Balance Stress**
 Calculate daily closing balances, negative-balance days, days below a
 configurable liquidity threshold, consecutive stress days and lowest
 balance. A possible initial threshold is 5% of average monthly balance,
@@ -440,55 +440,55 @@ deterministic calculations.
 
 ## Implementation sequence
 
-1.  Inspect repository and document current architecture/features.
-2.  Create `ASSUMPTIONS.md` and `DECISIONS.md`.
-3.  Produce a gap analysis against this handoff.
-4.  Improve transaction normalization and six-category classification.
-5.  Implement and test individual metrics.
-6.  Implement and test SME metrics.
-7.  Implement red-flag metrics.
-8.  Add behavioural comparisons and configurable thresholds.
-9.  Extend the existing rule evaluation engine.
+1. Inspect repository and document current architecture/features.
+2. Create `ASSUMPTIONS.md` and `DECISIONS.md`.
+3. Produce a gap analysis against this handoff.
+4. Improve transaction normalization and six-category classification.
+5. Implement and test individual metrics.
+6. Implement and test SME metrics.
+7. Implement red-flag metrics.
+8. Add behavioural comparisons and configurable thresholds.
+9. Extend the existing rule evaluation engine.
 10. Add AI Reviewer and escalation workflow.
 11. Integrate Individual and SME reports.
 12. Validate with synthetic datasets and edge cases.
 
 ## Development constraints
 
--   Extend, do not unnecessarily replace, existing functionality.
--   Preserve raw statement data and source provenance.
--   Keep calculations deterministic, reusable and testable.
--   Keep thresholds configurable and document their source/status.
--   Exclude internal transfers from income/expense/turnover
-    calculations.
--   Exclude refunds/reversals from income.
--   Exclude loan disbursements from business turnover.
--   Do not assume new counterparties or unusual transactions are
-    suspicious.
--   Do not declare fraud/default from statement patterns alone.
--   Do not fabricate missing metadata.
--   Maintain explanations and transaction-level audit trails.
--   Clearly distinguish observed facts, calculated metrics, statistical
-    anomalies and AI interpretations.
+- Extend, do not unnecessarily replace, existing functionality.
+- Preserve raw statement data and source provenance.
+- Keep calculations deterministic, reusable and testable.
+- Keep thresholds configurable and document their source/status.
+- Exclude internal transfers from income/expense/turnover
+  calculations.
+- Exclude refunds/reversals from income.
+- Exclude loan disbursements from business turnover.
+- Do not assume new counterparties or unusual transactions are
+  suspicious.
+- Do not declare fraud/default from statement patterns alone.
+- Do not fabricate missing metadata.
+- Maintain explanations and transaction-level audit trails.
+- Clearly distinguish observed facts, calculated metrics, statistical
+  anomalies and AI interpretations.
 
 ## Questions to resolve after repository inspection
 
 Do not block initial inspection on these questions. Record provisional
 assumptions in `ASSUMPTIONS.md` and seek confirmation where needed.
 
-1.  Does the user select Individual/SME, or should the system infer
-    entity type?
-2.  Will multiple accounts be uploaded together with a
-    customer-to-account ownership mapping?
-3.  How will CC/OD sanctioned limits and facility details be supplied?
-4.  Are credit-card statements available, or only bank statements?
-5.  Which LLM/provider and existing RAG integration are available?
-6.  Where should rule thresholds be configured (JSON, database or
-    existing admin UI)?
-7.  Is the final product expected to provide a financial health report,
-    borrower risk tier, credit eligibility recommendation, or all three?
-8.  Which AI Reviewer outcomes may be resolved automatically under
-    policy, and which always require human review?
+1. Does the user select Individual/SME, or should the system infer
+   entity type?
+2. Will multiple accounts be uploaded together with a
+   customer-to-account ownership mapping?
+3. How will CC/OD sanctioned limits and facility details be supplied?
+4. Are credit-card statements available, or only bank statements?
+5. Which LLM/provider and existing RAG integration are available?
+6. Where should rule thresholds be configured (JSON, database or
+   existing admin UI)?
+7. Is the final product expected to provide a financial health report,
+   borrower risk tier, credit eligibility recommendation, or all three?
+8. Which AI Reviewer outcomes may be resolved automatically under
+   policy, and which always require human review?
 
 ## Expected outcome
 

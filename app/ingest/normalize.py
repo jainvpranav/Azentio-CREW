@@ -11,6 +11,7 @@ KNOWN_ISO_CURRENCIES = {
     'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'INR', 'AUD', 'CAD', 'CHF',
     'SGD', 'HKD', 'AED', 'MYR', 'THB', 'IDR', 'PHP', 'KRW', 'BRL',
     'ZAR', 'NGN', 'KES', 'GHS', 'EGP', 'PKR', 'BDT', 'LKR', 'NPR',
+    'OMR', 'QAR', 'SAR', 'KWD', 'BHD', 'JOD',
 }
 
 # Ordered longest-first so 'C$' matches before '$', 'A$' before '$', etc.
@@ -26,7 +27,23 @@ _CURRENCY_SYMBOLS = sorted([
     ('SGD', 'SGD'), ('S$', 'SGD'),
     ('HKD', 'HKD'), ('HK$', 'HKD'),
     ('AED', 'AED'),
+    ('OMR', 'OMR'),
+    ('QAR', 'QAR'),
+    ('SAR', 'SAR'),
+    ('KWD', 'KWD'),
+    ('BHD', 'BHD'),
+    ('JOD', 'JOD'),
 ], key=lambda x: -len(x[0]))
+
+
+def detect_currency_in_text(text: str) -> Optional[str]:
+    """Return the first ISO currency code or symbol found in text, or None."""
+    if not text:
+        return None
+    for symbol, iso in _CURRENCY_SYMBOLS:
+        if symbol in text:
+            return iso
+    return None
 
 
 # ---------------------------------------------------------------------------

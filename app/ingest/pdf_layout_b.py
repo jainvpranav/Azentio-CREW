@@ -5,7 +5,7 @@ transaction: DD-Mon-YYYY | description | CR/DR | amount | balance.
 """
 import re
 import pdfplumber
-from app.ingest.normalize import normalize_date, normalize_amount, clean_description
+from app.ingest.normalize import normalize_date, normalize_amount, clean_description, detect_currency_in_text
 from app.ingest.pdf_parser import ParsedTransaction, ParsedStatement, PDFParseError
 
 SIGNATURE = "Current Account Statement"
@@ -38,12 +38,13 @@ def _parse_header(text: str) -> dict:
         header["period_start"] = None
         header["period_end"] = None
 
-    m = re.search(r"Opening Bal:\s*([\d,]+\.\d{2})", text)
+    m = re.search(r"Opening Bal:\s*(?:Rs\.?\s*)?([\d,]+\.\d+)(?:\s+[A-Z]{3})?", text)
     header["opening_balance"] = normalize_amount(m.group(1)) if m else None
 
-    m = re.search(r"Closing Bal:\s*([\d,]+\.\d{2})", text)
+    m = re.search(r"Closing Bal:\s*(?:Rs\.?\s*)?([\d,]+\.\d+)(?:\s+[A-Z]{3})?", text)
     header["closing_balance"] = normalize_amount(m.group(1)) if m else None
 
+    header["currency"] = detect_currency_in_text(text)
     return header
 
 
@@ -62,6 +63,7 @@ def parse_pdf(file_path: str) -> ParsedStatement:
         statement.period_end = header["period_end"]
         statement.opening_balance = header["opening_balance"]
         statement.closing_balance = header["closing_balance"]
+        statement.currency = header.get("currency")
 
         if not header["holder_name"] or not header["account_number"]:
             statement.errors.append(PDFParseError(1, "missing_header_fields"))

@@ -152,12 +152,12 @@ class DemoLLMClient(LLMClient):
 
 
 def get_default_client() -> LLMClient:
+    if os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes"):
+        return DemoLLMClient()
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if api_key:
         try:
             return AnthropicLLMClient(api_key=api_key)
         except ImportError:
             pass
-    if os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes"):
-        return DemoLLMClient()
     return NullLLMClient()
