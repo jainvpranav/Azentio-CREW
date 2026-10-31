@@ -27,6 +27,8 @@ class ParsedTransaction:
         currency: Optional[str] = None,
         raw_debit: Optional[str] = None,
         raw_credit: Optional[str] = None,
+        custom_metadata: Optional[dict] = None,
+        source_data: Optional[dict] = None,
     ):
         self.txn_date = txn_date
         self.description = description
@@ -39,6 +41,8 @@ class ParsedTransaction:
         self.currency = currency
         self.raw_debit = raw_debit
         self.raw_credit = raw_credit
+        self.custom_metadata = custom_metadata  # unmapped institution-specific fields
+        self.source_data = source_data          # complete original row {header: value}
 
 
 class ParsedStatement:

@@ -1,8 +1,10 @@
-"""Normalize dates, amounts, and descriptions"""
+"""Normalize dates, amounts, descriptions, and CSV headers"""
 from decimal import Decimal
 from datetime import date, datetime
+from difflib import SequenceMatcher
 from typing import Optional, Tuple
 import re
+import unicodedata
 
 
 KNOWN_ISO_CURRENCIES = {
@@ -25,6 +27,111 @@ _CURRENCY_SYMBOLS = sorted([
     ('HKD', 'HKD'), ('HK$', 'HKD'),
     ('AED', 'AED'),
 ], key=lambda x: -len(x[0]))
+
+
+# ---------------------------------------------------------------------------
+# Header normalization — for CSV/Excel/JSON column mapping
+# ---------------------------------------------------------------------------
+
+# Extensible alias dictionary. Each internal key maps to known aliases across
+# languages and institutions. Add new aliases here without touching the parser.
+HEADER_ALIASES: dict = {
+    'transaction_date': [
+        'date', 'posting date', 'txn date', 'transaction date', 'trans date',
+        'tran date', 'value date', 'effective date', 'book date', 'trade date',
+        'fecha', 'data', 'dat', 'datum', 'dated',
+    ],
+    'description': [
+        'description', 'narration', 'memo', 'details', 'particulars',
+        'remarks', 'historique', 'transaction details', 'narrative',
+        'transaction narration', 'trans description', 'transaction description',
+        'particuliers', 'libelle',
+        # Note: 'reference' is intentionally excluded — it conflicts with
+        # institution-specific "Reference ID" / "Reference No" columns.
+    ],
+    'amount': [
+        'amount', 'transaction amount', 'txn amount', 'importe',
+        'net amount', 'value', 'transaction value',
+    ],
+    'debit': [
+        'debit', 'withdrawal', 'withdrawals', 'outflow', 'paid out',
+        'debit amount', 'debit amt', 'dr amount', 'dr amt',
+        'wd', 'out', 'outgoing', 'payment', 'payments',
+    ],
+    'credit': [
+        'credit', 'deposit', 'deposits', 'inflow', 'paid in',
+        'credit amount', 'credit amt', 'cr amount', 'cr amt',
+        'in', 'incoming', 'receipt', 'receipts',
+    ],
+    'balance': [
+        'balance', 'running balance', 'closing balance', 'available balance',
+        'solde', 'bal', 'book balance', 'ledger balance', 'end balance',
+        'running total', 'balance amount',
+    ],
+}
+
+# Currency-prefixed aliases: headers like "Debit (INR)", "Balance (USD)" are
+# cleaned to their base word by _clean_header before alias matching, so they
+# resolve naturally to the right internal key without extra entries.
+
+_FUZZY_THRESHOLD = 0.85
+
+
+def _clean_header(raw: str) -> str:
+    """
+    Normalize a raw column header for alias matching.
+    - Strips currency codes and parenthetical suffixes: "Debit (INR)" → "debit"
+    - Unicode NFD → ASCII (drops accents): "Fecha" → "fecha"
+    - Lowercase, collapse whitespace; underscores/hyphens → space.
+    """
+    # Drop parenthetical currency/unit suffixes: "Debit (INR)" → "Debit"
+    s = re.sub(r'\s*\([^)]*\)', '', raw).strip()
+    # Unicode normalize: drop accents
+    s = unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode('ascii')
+    s = s.lower()
+    # Underscores, hyphens, slashes, common punctuation → space
+    s = re.sub(r'[\-_/\\|.,;:()[\]{}]', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
+def normalize_header(raw_header: str) -> Optional[str]:
+    """
+    Return a confidently matched internal key (transaction_date, description,
+    amount, debit, credit, balance) or None for unknown/ambiguous headers.
+
+    Matching order:
+    1. Exact alias match after cleaning (fast path, highest confidence).
+    2. Fuzzy match (SequenceMatcher) ≥ FUZZY_THRESHOLD (0.85).
+    3. None — never guesses below the threshold.
+
+    The caller must retain the original header alongside any matched key.
+    The alias dictionary (HEADER_ALIASES) is the only extension point needed
+    to support new languages, banks, or institution-specific column names.
+    """
+    if not raw_header or not isinstance(raw_header, str):
+        return None
+    cleaned = _clean_header(raw_header)
+    if not cleaned:
+        return None
+
+    # 1. Exact match
+    for internal_key, aliases in HEADER_ALIASES.items():
+        for alias in aliases:
+            if cleaned == alias:
+                return internal_key
+
+    # 2. Fuzzy match — only above safe threshold
+    best_key: Optional[str] = None
+    best_score = 0.0
+    for internal_key, aliases in HEADER_ALIASES.items():
+        for alias in aliases:
+            score = SequenceMatcher(None, cleaned, alias).ratio()
+            if score > best_score:
+                best_score = score
+                best_key = internal_key
+
+    return best_key if best_score >= _FUZZY_THRESHOLD else None
 
 
 def normalize_date(value: str, day_first: bool = True) -> date:

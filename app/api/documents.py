@@ -171,6 +171,8 @@ async def upload_documents(
                             currency=getattr(parsed_txn, "currency", None) or stmt_currency,
                             raw_debit=getattr(parsed_txn, "raw_debit", None),
                             raw_credit=getattr(parsed_txn, "raw_credit", None),
+                            custom_metadata=json.dumps(parsed_txn.custom_metadata) if getattr(parsed_txn, "custom_metadata", None) else None,
+                            source_data=json.dumps(parsed_txn.source_data) if getattr(parsed_txn, "source_data", None) else None,
                         )
                         session.add(txn)
                     session.commit()

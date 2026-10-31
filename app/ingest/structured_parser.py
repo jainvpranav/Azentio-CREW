@@ -4,10 +4,11 @@ import re
 import pandas as pd
 from decimal import Decimal
 from datetime import date
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 from app.ingest.normalize import (
     normalize_date, normalize_amount, clean_description,
     extract_currency_from_amount, KNOWN_ISO_CURRENCIES,
+    normalize_header, _clean_header,
 )
 from app.ingest.pdf_parser import ParsedTransaction, ParsedStatement, PDFParseError
 
@@ -24,13 +25,11 @@ def _currency_from_headers(columns: dict, df: pd.DataFrame) -> Optional[str]:
     Try to infer a statement-level currency from column headers or the first few data rows.
     Returns ISO 3-letter code or None. Never guesses — only explicit symbols/codes.
     """
-    # Check column header names for embedded currency
     for col_name in df.columns:
         c = extract_currency_from_amount(str(col_name))
         if c:
             return c
 
-    # Sample the first 10 non-null amount values across debit/credit/balance columns
     for col_key in ('debit', 'credit', 'balance'):
         col = columns.get(col_key)
         if not col:
@@ -43,26 +42,49 @@ def _currency_from_headers(columns: dict, df: pd.DataFrame) -> Optional[str]:
     return None
 
 
+def map_headers(df: pd.DataFrame) -> Tuple[Dict[str, str], Dict[str, List[str]], List[str]]:
+    """
+    Map DataFrame column names to internal keys using normalize_header().
+
+    Returns:
+      column_map   - {internal_key: col_name} for unambiguous 1-to-1 matches
+      ambiguous    - {internal_key: [col_names]} when multiple columns map to the same key
+      unmapped     - [col_names] that normalize_header() returned None for
+
+    Rules:
+    - Each internal key is assigned at most one source column (first match wins).
+    - When a second column resolves to the same key, both are recorded in ambiguous
+      and neither is used as the primary, preserving both values for audit.
+    - unmapped columns are stored verbatim in custom_metadata on every row.
+    """
+    column_map: Dict[str, str] = {}
+    ambiguous: Dict[str, List[str]] = {}
+    unmapped: List[str] = []
+
+    for col in df.columns:
+        key = normalize_header(str(col))
+        if key is None:
+            unmapped.append(col)
+        elif key in ambiguous:
+            ambiguous[key].append(col)
+        elif key in column_map:
+            # Second column maps to same key — move to ambiguous, clear primary
+            ambiguous[key] = [column_map.pop(key), col]
+        else:
+            column_map[key] = col
+
+    return column_map, ambiguous, unmapped
+
+
 def find_columns(df: pd.DataFrame) -> dict:
     """
-    Find relevant columns in dataframe by keyword matching on header names.
-    Returns dict with keys: date, description, debit, credit, balance.
-
-    Strong (full-word) keywords are tried before short abbreviations
-    ('cr', 'dr', 'wd', 'in', 'out', 'dep'), and a column already assigned
-    to date/description is excluded from the debit/credit/balance search -
-    otherwise a narration-style header like "Description" (which contains
-    the substring "cr") can get mis-matched as the Credit column before the
-    real "Credit" column is even checked.
+    Keyword-based column finder kept for backward compatibility (used by PDF table
+    extraction paths). New code should use map_headers() instead.
     """
     columns = {
-        'date': None,
-        'description': None,
-        'debit': None,
-        'credit': None,
-        'balance': None,
+        'date': None, 'description': None,
+        'debit': None, 'credit': None, 'balance': None,
     }
-
     df_cols = list(df.columns)
 
     date_candidates = [c for c in df_cols if any(x in c.lower() for x in ['date', 'txn', 'value'])]
@@ -72,7 +94,6 @@ def find_columns(df: pd.DataFrame) -> dict:
     columns['description'] = desc_candidates[0] if desc_candidates else (df_cols[1] if len(df_cols) > 1 else None)
 
     remaining = [c for c in df_cols if c not in (columns['date'], columns['description'])]
-
     columns['debit'] = (
         _first_match(remaining, ['debit', 'withdrawal'])
         or _first_match(remaining, ['wd', 'dr', 'out'])
@@ -82,7 +103,6 @@ def find_columns(df: pd.DataFrame) -> dict:
         or _first_match(remaining, ['dep', 'cr', 'in'])
     )
     columns['balance'] = _first_match(remaining, ['balance', 'bal'])
-
     return columns
 
 
@@ -110,25 +130,70 @@ def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement, source_type: 
         statement.errors.append(PDFParseError(1, "empty_file"))
         return
 
-    columns = find_columns(df)
-    if not columns['date'] or not columns['description']:
+    # Primary: use normalize_header-based mapping for international/institution-aware matching.
+    # Falls back to find_columns() for any key not resolved by the alias dictionary.
+    column_map, ambiguous, unmapped = map_headers(df)
+
+    # Record any ambiguous mappings as a diagnostic
+    if ambiguous:
+        for key, cols in ambiguous.items():
+            statement.errors.append(PDFParseError(1, f"ambiguous_header_{key}: {cols}"))
+
+    # For keys not resolved by normalize_header, fall back to keyword scan
+    legacy = find_columns(df)
+    for key in ('transaction_date', 'description', 'debit', 'credit', 'balance'):
+        short = 'date' if key == 'transaction_date' else key
+        if key not in column_map and short in legacy and legacy[short]:
+            column_map[key] = legacy[short]
+            # Remove from unmapped if it ended up there
+            if legacy[short] in unmapped:
+                unmapped.remove(legacy[short])
+
+    date_col = column_map.get('transaction_date')
+    desc_col = column_map.get('description')
+
+    if not date_col or not desc_col:
         statement.errors.append(PDFParseError(1, "missing_required_columns"))
         return
 
-    # Statement-level currency: try headers first, then row samples
-    statement.currency = _currency_from_headers(columns, df)
+    debit_col   = column_map.get('debit')
+    credit_col  = column_map.get('credit')
+    balance_col = column_map.get('balance')
+    amount_col  = column_map.get('amount')
+
+    # Statement-level currency: try headers, then row samples
+    statement.currency = _currency_from_headers(
+        {'debit': debit_col, 'credit': credit_col, 'balance': balance_col}, df
+    )
+
+    # All mapped internal cols — not stored in custom_metadata
+    mapped_cols = set(column_map.values())
+    # Cols involved in ambiguous mappings — still stored in source_data
+    ambiguous_cols = {c for cols in ambiguous.values() for c in cols}
 
     for idx, row in df.iterrows():
         try:
-            txn_date = normalize_date(row[columns['date']])
-            description = clean_description(row[columns['description']])
+            txn_date = normalize_date(row[date_col])
+            description = clean_description(row[desc_col])
 
-            raw_debit = str(row[columns['debit']]) if columns['debit'] else None
-            raw_credit = str(row[columns['credit']]) if columns['credit'] else None
+            raw_debit  = str(row[debit_col])  if debit_col  else None
+            raw_credit = str(row[credit_col]) if credit_col else None
 
-            debit = normalize_amount(row[columns['debit']]) if columns['debit'] else None
-            credit = normalize_amount(row[columns['credit']]) if columns['credit'] else None
-            balance = normalize_amount(row[columns['balance']]) if columns['balance'] else None
+            debit   = normalize_amount(row[debit_col])   if debit_col   else None
+            credit  = normalize_amount(row[credit_col])  if credit_col  else None
+            balance = normalize_amount(row[balance_col]) if balance_col else None
+
+            # If no debit/credit columns but a single 'amount' column exists,
+            # treat positive as credit and negative as debit (common in some formats)
+            if not any([debit, credit]) and amount_col:
+                amt = normalize_amount(row[amount_col])
+                if amt is not None:
+                    if amt >= 0:
+                        credit = amt
+                        raw_credit = str(row[amount_col])
+                    else:
+                        debit = abs(amt)
+                        raw_debit = str(row[amount_col])
 
             if not any([debit, credit]):
                 continue
@@ -139,6 +204,18 @@ def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement, source_type: 
                 or extract_currency_from_amount(raw_credit)
                 or statement.currency
             )
+
+            # source_data: complete original row — every header + raw value
+            source_data = {str(col): (str(row[col]) if pd.notna(row[col]) else None)
+                           for col in df.columns}
+
+            # custom_metadata: unmapped columns + ambiguous collision columns
+            custom_metadata = {str(col): source_data[str(col)]
+                               for col in (unmapped + list(ambiguous_cols))}
+            if ambiguous:
+                custom_metadata['_ambiguous_mappings'] = {
+                    key: cols for key, cols in ambiguous.items()
+                }
 
             statement.transactions.append(ParsedTransaction(
                 txn_date=txn_date,
@@ -152,6 +229,8 @@ def _parse_dataframe(df: pd.DataFrame, statement: ParsedStatement, source_type: 
                 currency=row_currency,
                 raw_debit=raw_debit,
                 raw_credit=raw_credit,
+                custom_metadata=custom_metadata if custom_metadata else None,
+                source_data=source_data,
             ))
 
         except (ValueError, KeyError):

@@ -182,6 +182,8 @@ class Transaction(SQLModel, table=True):
     currency: Optional[str] = None          # ISO 3-letter code; None = not determinable (flag for review)
     raw_debit: Optional[str] = None         # original debit text before normalization
     raw_credit: Optional[str] = None        # original credit text before normalization
+    custom_metadata: Optional[str] = None   # JSON: unmapped institution-specific columns (Branch Code, etc.)
+    source_data: Optional[str] = None       # JSON: complete original row {header: value} for audit
 
 
 class Classification(SQLModel, table=True):
