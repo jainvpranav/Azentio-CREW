@@ -1,10 +1,9 @@
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
 from app.db import create_db_and_tables, engine, get_session
 from app import models
+from app.api import documents, transactions
 
 
 # Create app
@@ -18,6 +17,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(documents.router)
+app.include_router(transactions.router)
 
 # Initialize database
 @app.on_event("startup")
@@ -39,29 +42,16 @@ def health_check():
 
 
 @app.get("/api/accounts", response_model=list[models.Account])
-def list_accounts():
+def list_accounts(session = Depends(get_session)):
     """List all accounts"""
     from sqlmodel import select
-    session = next(get_session())
     accounts = session.exec(select(models.Account)).all()
     return accounts
 
 
-@app.get("/api/documents", response_model=list[models.DocumentResponse])
-def list_documents():
-    """List all uploaded documents with status"""
-    from sqlmodel import select
-    session = next(get_session())
-    docs = session.exec(select(models.Document)).all()
-    return docs
-
-
 @app.post("/api/reset")
-def reset_database():
+def reset_database(session = Depends(get_session)):
     """Reset database (demo convenience)"""
-    from sqlmodel import text
-    session = next(get_session())
-
     # Drop all tables
     models.SQLModel.metadata.drop_all(engine)
     create_db_and_tables()
