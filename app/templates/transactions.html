@@ -21,11 +21,11 @@
         </div>
         <div class="stat-chip" style="border-left:4px solid var(--green);">
             <div class="stat-number" style="color:var(--green);" x-text="chipSymbol + formatAmount(totalCredits)"></div>
-            <div class="stat-label">Total Inflows <span x-show="chipCurrency" class="text-xs text-muted" x-text="'(' + chipCurrency + ')'"></span></div>
+            <div class="stat-label">Total Inflows <span x-show="chipCurrency" class="text-xs text-muted" x-text="'(' + chipCurrency + ')'" ></span></div>
         </div>
         <div class="stat-chip" style="border-left:4px solid var(--red);">
             <div class="stat-number" style="color:var(--red);" x-text="chipSymbol + formatAmount(totalDebits)"></div>
-            <div class="stat-label">Total Outflows <span x-show="chipCurrency" class="text-xs text-muted" x-text="'(' + chipCurrency + ')'"></span></div>
+            <div class="stat-label">Total Outflows <span x-show="chipCurrency" class="text-xs text-muted" x-text="'(' + chipCurrency + ')'" ></span></div>
         </div>
         <div class="stat-chip" :style="(totalCredits - totalDebits) >= 0 ? 'border-left:4px solid var(--green)' : 'border-left:4px solid var(--red)'">
             <div class="stat-number" :style="(totalCredits - totalDebits) >= 0 ? 'color:var(--green)' : 'color:var(--red)'"
@@ -133,6 +133,7 @@
                                 <button
                                     @click="editCategory(txn)"
                                     class="secondary"
+                                    type="button"
                                     style="padding:3px 10px; font-size:11px;"
                                     :disabled="txn.duplicate_of"
                                 >Reclassify</button>
@@ -146,48 +147,47 @@
             No transactions match the current filters.
         </p>
     </div>
-</div>
 
-<!-- ── Reclassify Modal ───────────────────────────── -->
-<div x-show="editModal"
-     x-data
-     style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.55); display:flex; align-items:center; justify-content:center; z-index:1000;">
-    <div style="background:white; padding:24px; border-radius:var(--radius-lg); max-width:440px; width:90%; box-shadow:var(--shadow-lg);">
-        <h3 style="font-size:16px; margin-bottom:4px;">Reclassify Transaction</h3>
-        <p class="text-sm text-muted" style="margin-bottom:16px;" x-text="currentTxn?.description + ' — ' + currencySymbol(currentTxn?.currency) + formatAmount(currentTxn?.credit || currentTxn?.debit)"></p>
+    <!-- ── Reclassify Modal ───────────────────────────── -->
+    <div x-show="editModal"
+         style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.55); display:flex; align-items:center; justify-content:center; z-index:1000;">
+        <div style="background:white; padding:24px; border-radius:var(--radius-lg); max-width:440px; width:90%; box-shadow:var(--shadow-lg);">
+            <h3 style="font-size:16px; margin-bottom:4px;">Reclassify Transaction</h3>
+            <p class="text-sm text-muted" style="margin-bottom:16px;" x-text="currentTxn?.description + ' — ' + currencySymbol(currentTxn?.currency) + formatAmount(currentTxn?.credit || currentTxn?.debit)"></p>
 
-        <div style="background:var(--gray-50); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:12px; border:1px solid var(--border);">
-            <span style="color:var(--gray-500); font-weight:600;">CURRENT CATEGORY:</span>&nbsp;
-            <span class="cat-tag" :class="'cat-' + (currentTxn?.category || 'UNCLASSIFIED')" x-text="friendlyCategory(currentTxn?.category)"></span>
-        </div>
+            <div style="background:var(--gray-50); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:12px; border:1px solid var(--border);">
+                <span style="color:var(--gray-500); font-weight:600;">CURRENT CATEGORY:</span>&nbsp;
+                <span class="cat-tag" :class="'cat-' + (currentTxn?.category || 'UNCLASSIFIED')" x-text="friendlyCategory(currentTxn?.category)"></span>
+            </div>
 
-        <div class="form-group">
-            <label>New Category</label>
-            <select x-model="newCategory">
-                <option value="SALARY">Salary</option>
-                <option value="BUSINESS_RECEIPT">Business Receipt</option>
-                <option value="INTERNAL_TRANSFER">Internal Transfer</option>
-                <option value="REFUND">Refund</option>
-                <option value="LOAN_DISBURSEMENT">Loan Disbursement</option>
-                <option value="LOAN_EMI">Loan EMI</option>
-                <option value="RENT">Rent</option>
-                <option value="UTILITIES">Utilities</option>
-                <option value="CARD_PAYMENT">Card Payment</option>
-                <option value="OTHER_EXPENSE">Other Expense</option>
-                <option value="CASH_DEPOSIT">Cash Deposit</option>
-                <option value="CASH_WITHDRAWAL">Cash Withdrawal</option>
-                <option value="BANK_CHARGES">Bank Charges</option>
-                <option value="INTEREST">Interest</option>
-                <option value="UNCLASSIFIED">Unclassified</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Analyst Note (optional)</label>
-            <input type="text" x-model="newNote" placeholder="Reason for reclassification…">
-        </div>
-        <div style="display:flex; gap:10px; margin-top:8px;">
-            <button @click="saveCategory()" style="flex:1;">Save Classification</button>
-            <button @click="editModal = false" class="secondary" style="flex:1;">Cancel</button>
+            <div class="form-group">
+                <label>New Category</label>
+                <select x-model="newCategory">
+                    <option value="SALARY">Salary</option>
+                    <option value="BUSINESS_RECEIPT">Business Receipt</option>
+                    <option value="INTERNAL_TRANSFER">Internal Transfer</option>
+                    <option value="REFUND">Refund</option>
+                    <option value="LOAN_DISBURSEMENT">Loan Disbursement</option>
+                    <option value="LOAN_EMI">Loan EMI</option>
+                    <option value="RENT">Rent</option>
+                    <option value="UTILITIES">Utilities</option>
+                    <option value="CARD_PAYMENT">Card Payment</option>
+                    <option value="OTHER_EXPENSE">Other Expense</option>
+                    <option value="CASH_DEPOSIT">Cash Deposit</option>
+                    <option value="CASH_WITHDRAWAL">Cash Withdrawal</option>
+                    <option value="BANK_CHARGES">Bank Charges</option>
+                    <option value="INTEREST">Interest</option>
+                    <option value="UNCLASSIFIED">Unclassified</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Analyst Note (optional)</label>
+                <input type="text" x-model="newNote" placeholder="Reason for reclassification…">
+            </div>
+            <div style="display:flex; gap:10px; margin-top:8px;">
+                <button @click="saveCategory()" type="button" style="flex:1;">Save Classification</button>
+                <button @click="editModal = false" type="button" class="secondary" style="flex:1;">Cancel</button>
+            </div>
         </div>
     </div>
 </div>
@@ -297,15 +297,21 @@ function transactionsPage() {
         async saveCategory() {
             if (!this.currentTxn) return;
             try {
-                await fetch(`/api/transactions/${this.currentTxn.id}/reclassify`, {
+                const response = await fetch(`/api/transactions/${this.currentTxn.id}/reclassify`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ category: this.newCategory, note: this.newNote }),
                 });
+
+                if (!response.ok) {
+                    const errorBody = await response.json().catch(() => ({}));
+                    throw new Error(errorBody.detail || 'Unable to save the category.');
+                }
+
                 this.editModal = false;
                 await this.loadTransactions();
             } catch (error) {
-                alert('Error saving: ' + error.message);
+                alert('Error saving: ' + (error?.message || error));
             }
         },
 
